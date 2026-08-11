@@ -209,7 +209,7 @@ RATE_ADJUSTMENT_INTERVAL = 1800  # هر 30 دقیقه بررسی و تنظیم
 # برای غیرفعال کردن ارسال تبلیغات: False
 # برای فعال کردن ارسال تبلیغات: True
 # ═══════════════════════════════════════════════════════════
-ENABLE_BROADCAST = True  # 🟢 ارسال پیام‌های تبلیغاتی فعال شد
+ENABLE_BROADCAST = False  # 🟢 ارسال پیام‌های تبلیغاتی فعال شد
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 🧠 PROFESSIONAL NATURAL AI + HUMAN SIM (ported + adapted from web3test best practices)

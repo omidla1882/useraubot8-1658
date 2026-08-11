@@ -1,9 +1,9 @@
 {
   "joined_links": [
+    "xbourse62",
     "aisaamed",
     "unftbn",
-    "daroushafatorghabe",
-    "xbourse62"
+    "daroushafatorghabe"
   ],
   "failed_links": {},
   "stats": {
@@ -15,5 +15,5 @@
     "flood_waits": 0,
     "current_delay_multiplier": 1.0
   },
-  "last_save": "2026-08-01T22:46:09.245697"
+  "last_save": "2026-08-12T00:27:41.890926"
 }

@@ -82,8 +82,9 @@ def slog(*args, **kwargs):
         print(*args, **kwargs)
 
 # تنظیمات API
-api_id = 22673181
-api_hash = 'f38a65c5e43bdb451ca7db65151a8551'
+api_id = 28652875
+api_hash = '97469594916750008690bb4a21e2ebab'
+
 session_name = 'my_session'
 
 # ═══════════════════════════════════════════════════════════

@@ -754,7 +754,8 @@ def repair_llm_output(text: str, language: str = 'fa') -> str:
     text = re.sub(r'(سانتیمتر|سانتی‌متر|کیلومتر)', '', text, flags=re.I)
     # Random clock hallucinations ("وقت ۲ صبح")
     text = re.sub(r'وقت\s*\d+\s*(صبح|شب|ظهر)', '', text)
-    text = re.sub(r'ساعت\s*\d+\s*تا\s*\d+\s*(روز|شب|صبح)', '', text)
+    text = re.sub(r'ساعت\s*\d+(\s*تا\s*\d+)?\s*(صبح|شب|ظهر|روز)', '', text)
+    text = re.sub(r'کلکشن', '', text, flags=re.I)
     # Don't spam the same personal claim
     if text.count('خودم گرفتم') > 1:
         first = text.find('خودم گرفتم')
@@ -868,6 +869,11 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
         'presence_check': [
             "آره هستم. بگو.",
             "اینجام.",
+        ],
+        'bot_question': [
+            "آره اینجام. بگو چی شده.",
+            "بگو ببینم چی میخوای، شاید بتونم کمک کنم.",
+            "حرف بزن، گوش میدم.",
         ],
     }
     if intent in _SOCIAL:

@@ -341,10 +341,8 @@ def is_high_quality_natural(text: str) -> bool:
         return False
     if t.lower().count('خودم گرفتم') >= 2 or t.lower().count('آره خودم') >= 2:
         return False
-    # Final: must feel like real chat (at least one personal/experience word or question)
-    personal_markers = ['خودم', 'تجربه', 'معمولاً', 'بستگه', 'گرفتم', 'دیدم', 'میگم', 'فکر کنم', 'تو چی', 'دقیق بگو']
-    has_personal = any(m in t for m in personal_markers) or '?' in t or '؟' in t
-    if not has_personal and len(t) > 60:
+    # Nonsense units (small-model hallucination: "۲ سانتیمتر طول میکشد")
+    if _re.search(r'(سانتیمتر|سانتی‌متر|کیلومتر)\s*(طول|زمان)|طول میکشد\s*$', t):
         return False
     return True
 
@@ -1161,69 +1159,25 @@ class IntelligentGroupEngager:
         mood = self._get_personality_mood(gid)
         ctx_list.append(f"Speak as a real human in this mood: {mood}. Natural Persian chat. No lists. Short paragraphs. Real experience tone.")
 
-        # Deep engine injection (Viral + Engagement + Funnel + AntiSpam + Time + AB) - explicit and robust
+        # Light strategy only — do not inject viral/sales copy (that is a strong AI tell)
         strategy_hint = ""
         try:
-            # Viral value angle (always try)
-            if 'viral_engine' in globals() and viral_engine:
-                viral = viral_engine.generate_viral_content('valuable_info')
-                if viral:
-                    strategy_hint += f" Naturally weave in this valuable angle without sounding salesy: {viral[:110]}. "
-
-            # EngagementBooster techniques
-            if 'engagement_booster' in globals() and engagement_booster:
-                try:
-                    eng_hint = engagement_booster.suggest_technique(target_text)
-                    if eng_hint:
-                        strategy_hint += eng_hint + " "
-                except:
-                    pass
-
-            # FunnelAnalytics for timing
-            funnel_ready = False
-            if 'funnel_analytics' in globals() and funnel_analytics:
-                try:
-                    rep = funnel_analytics.get_funnel_report()
-                    if rep.get('total_conversions', 0) > 0 or turns >= 2:
-                        funnel_ready = True
-                        strategy_hint += " User has received value. Consider very soft natural invitation to continue privately. "
-                except:
-                    pass
-
-            # Funnel decision
-            if turns >= 2 and funnel_ready:
-                strategy_hint += " After real value, add ONE extremely soft, low-pressure hint that continuing in private might be easier (never pushy, never first message). "
-
-            # Question handling
+            if turns >= 2:
+                strategy_hint += " If it fits, one soft hint that details are easier in private. "
             if '?' in target_text or '؟' in target_text:
-                strategy_hint += " Give a complete thoughtful answer then ask ONE natural follow-up to continue dialogue. "
-
-            # TimeOptimization / AntiSpam for "is now a good time"
-            if 'time_optimizer' in globals() and time_optimizer:
-                try:
-                    mult = time_optimizer.get_current_multiplier()
-                    if mult > 1.5:
-                        strategy_hint += " Be more concise and low-key right now. "
-                except:
-                    pass
-
-            if 'anti_spam' in globals() and anti_spam:
-                try:
-                    if not anti_spam.should_rest():
-                        strategy_hint += " Group activity level supports a helpful reply. "
-                except:
-                    pass
-
-            # AB / personality
-            strategy_hint += f" Match the current group mood/personality: {self._get_personality_mood(gid)}. "
-        except:
+                strategy_hint += " Answer the question first. One follow-up max. "
+            strategy_hint += f" Match mood: {mood}. "
+        except Exception:
             pass
 
         if strategy_hint:
             ctx_list = [strategy_hint] + ctx_list
 
         # === STAGE 1: Primary generation (single LLM call — no triple critique, too slow on CPU) ===
-        resp = await call_qwen3_natural(ctx_list, target_text, chat_id=gid, high_value=True, use_think=False)
+        resp = await call_qwen3_natural(
+            ctx_list, target_text, chat_id=gid, high_value=True, use_think=False,
+            user_id=getattr(target_msg, 'sender_id', 0) or 0,
+        )
 
         if not resp or not is_high_quality_natural(resp):
             return None
@@ -1265,9 +1219,6 @@ class IntelligentGroupEngager:
     async def process_incoming(self, gid: int, msg, recent_ctx: str) -> Optional[str]:
         """Central entry point for any group message that deserves reply."""
         if not can_send_to_group_safely(gid):
-            return None
-        # Human-like lurking: occasionally skip to look less active (reduced from 25% to 10%)
-        if random.random() < 0.10:
             return None
         try:
             best = await self.select_best_message_to_reply(gid, [msg] if msg else [])
@@ -14136,7 +14087,7 @@ async def handle_owner_command(event):
     return False
 
 
-async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = None, *, high_value: bool = False, use_think: bool = False) -> Optional[str]:
+async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = None, *, high_value: bool = False, use_think: bool = False, user_id: int = 0) -> Optional[str]:
     """
     MAJOR UPGRADED professional pipeline.
     - Uses director for variant + params
@@ -14200,7 +14151,7 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     notes = get_group_notes(chat_id) if chat_id else ""
     mem_ctx = ""
     try:
-        mem_ctx = get_user_context(chat_id, 0) if chat_id else ""
+        mem_ctx = get_user_context(chat_id, user_id or 0) if chat_id else ""
     except Exception:
         pass
 
@@ -14278,6 +14229,9 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
             pass
         if is_high_quality_natural(cleaned) and len(cleaned) >= 22:
             llm_result = cleaned
+        elif cleaned and len(cleaned) >= 28 and _re.search(r'[آ-ی]', cleaned):
+            if not any(b in cleaned for b in ('ربات', 'هوش مصنوعی', 'سانتیمتر', 'You are', 'Assistant:')):
+                llm_result = cleaned
 
     # Re-prompt only if we got raw text but quality gate rejected it (skip if timeout)
     if (not llm_result) and raw and not llm_err:
@@ -14360,7 +14314,7 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     if result:
         try:
             if chat_id:
-                update_user_memory(chat_id, 0, user_text[:60])
+                update_user_memory(chat_id, user_id or 0, user_text[:60])
                 _record_bot_output(chat_id, result)
             group_exchange_history[chat_id].append(("bot", result))
         except Exception:
@@ -14409,7 +14363,7 @@ async def call_qwen3_api(user_message: str) -> Optional[str]:
 group_chat_memory: Dict[int, deque] = defaultdict(lambda: deque(maxlen=12))
 # group_ai_last_response already declared globally earlier in file
 
-@client.on(events.NewMessage(func=lambda e: e.is_group))
+@client.on(events.NewMessage(incoming=True, func=lambda e: e.is_group))
 async def handle_group_ai(event):
     """
     Natural human-like group replies powered by Qwen3.
@@ -14469,9 +14423,10 @@ async def handle_group_ai(event):
 
         if not response:
             if is_mentioned:
-                fb = _AI_FAST_RESPONSES.get('support_redirect', "می‌تونی از @PharmaWebAd بپرسی.")
-                await event.reply(fb)
-                group_ai_last_response[chat_id] = now
+                fb = _intent_fallback('unknown', text)
+                if fb:
+                    await event.reply(fb)
+                    group_ai_last_response[chat_id] = now
             return
 
         # Final anti-rep + quality guard before any send

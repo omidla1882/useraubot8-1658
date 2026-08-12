@@ -237,6 +237,24 @@ def classify_intent(message: str) -> Dict:
         intent = 'tracking'
         confidence = 0.92
 
+    # Delivery-time questions win over crypto even if USDT is mentioned
+    if re.search(r'(ارسال|تحویل|طول\s*می|چند\s*ساعت|کی\s*میرس)', msg_lower):
+        for city in SHIPPING_CITIES['fast']:
+            if city in msg_lower:
+                intent = 'shipping_time'
+                confidence = 0.93
+                entities.setdefault('cities', []).append({'name': city, 'flag': SHIPPING_CITIES['fast'][city]})
+                break
+
+    # ADHD / focus / weight without a brand name
+    if intent == 'unknown':
+        if re.search(r'adhd|بیش.?فعال|تمرکز|نارکولپسی', msg_lower):
+            intent = 'product_search'
+            confidence = 0.82
+        elif re.search(r'کاهش\s*وزن|لاغر|چاقی', msg_lower):
+            intent = 'product_search'
+            confidence = 0.80
+
     return {
         'intent': intent,
         'confidence': confidence,
@@ -719,6 +737,20 @@ def repair_llm_output(text: str, language: str = 'fa') -> str:
     # Additional common small model fixes
     text = re.sub(r'تراکته', '', text, flags=re.I)
     text = re.sub(r'فروشگاه آنلاین \(Online Store\)', 'فروشگاه آنلاین', text, flags=re.I)
+    # Time expressed as physical units (seen live: "۲ تا ۳ سانتیمتر طول میکشد")
+    text = re.sub(
+        r'\d+\s*تا\s*\d+\s*(سانتیمتر|سانتی‌متر|متر|کیلومتر|گرم)',
+        'چند ساعت',
+        text,
+        flags=re.I,
+    )
+    text = re.sub(r'(سانتیمتر|سانتی‌متر|کیلومتر)', '', text, flags=re.I)
+    # Don't spam the same personal claim
+    if text.count('خودم گرفتم') > 1:
+        first = text.find('خودم گرفتم')
+        text = text[: first + len('خودم گرفتم')] + text[first + len('خودم گرفتم'):].replace('خودم گرفتم', '')
+    # Strip leftover double spaces
+    text = re.sub(r'  +', ' ', text)
     # Remove repetitive identical lines
     lines = [ln.strip() for ln in text.split('\n') if ln.strip()]
     seen = set()
@@ -783,17 +815,18 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
         if not raw or len(raw) < 15:
             return None
         first = raw.split('\n')[0].strip()[:200]
-        # Convert factual snippets to peer voice
-        peer_prefixes = [
-            "از تجربه‌ام، ", "معمولاً ", "خودم که ", "راستش ", "به نظرم ",
-        ]
-        if intent == 'shipping_time':
-            return random.choice(peer_prefixes) + first + " تو کدوم شهر هستی؟"
-        if intent in ('crypto_info', 'payment_crypto_help'):
-            return random.choice(peer_prefixes) + first + " سوالی داری بپرس."
-        if intent in ('product_search', 'stock_check'):
-            return first + " بگو دقیق‌تر چی میخوای."
-        return random.choice(peer_prefixes) + first
+        # Convert factual snippets to peer voice — vary endings so it doesn't loop
+        peer_prefixes = ["راستش ", "معمولاً ", "به نظرم ", ""]
+        endings = {
+            'shipping_time': [" کدوم شهر مدنظرت هست؟", " بسته‌بندی محرمانه‌ست.", ""],
+            'crypto_info': [" شبکه رو دقیق چک کن.", " TRC20 معمولاً کم‌دردسرتره.", ""],
+            'payment_crypto_help': [" آدرس رو دقیق کپی کن.", " بعد واریز چند دقیقه طول میکشه.", ""],
+            'product_search': [" بگو دقیق کدومش.", " اورجینالش فرق داره با ایرانیش.", ""],
+            'stock_check': [" بگو برای کجاست.", " موجودیش بستگه به مدل.", ""],
+        }
+        prefix = random.choice(peer_prefixes)
+        ending = random.choice(endings.get(intent, ["", " بیشتر بگو."]))
+        return (prefix + first + ending).strip()
 
     # Try knowledge-grounded natural reply first
     if retrieved:

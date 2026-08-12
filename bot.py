@@ -647,7 +647,9 @@ QWEN3_MODEL = os.environ.get('QWEN3_MODEL', 'qwen3:1.7b')
 # محدودیت: حداکثر 1 پاسخ AI در هر گروه در این بازه زمانی (ثانیه) — STRONG anti-spam
 GROUP_AI_COOLDOWN_SECONDS = 90    # حداقل 90 ثانیه بین پاسخ‌های غیر mention
 GROUP_AI_TIMEOUT_SECONDS = 95     # زمان بیشتر برای مدل کند CPU (qwen3:1.7b)
-QWEN3_MAX_RETRIES = 2             # تلاش مجدد در صورت timeout
+QWEN3_MAX_RETRIES = 1             # یک تلاش اضافه کافی است؛ بیشتر مدل CPU را قفل می‌کند
+_last_global_qwen = 0.0
+MIN_GLOBAL_QWEN_INTERVAL = 12     # حداقل فاصله بین دو فراخوانی مدل (کل گروه‌ها)
 
 # ═══════════════════════════════════════════════════════════
 # 🛡️ SMART ANTI-SPAM / ANTI-DUPLICATE GUARD
@@ -1123,7 +1125,7 @@ class IntelligentGroupEngager:
         idx = (base + int(time.time() // 1800)) % len(moods)
         return moods[idx]
 
-    async def generate_valuable_reply(self, gid: int, target_msg, recent_ctx: str) -> Optional[str]:
+    async def generate_valuable_reply(self, gid: int, target_msg, recent_ctx: str, use_llm: bool = True) -> Optional[str]:
         """
         MAJOR UPGRADE: 2-stage critique (naturalness + value/funnel), think mode on critique,
         ultra-rich per-user + group + engine context, personality/mood, PM rapport goal.
@@ -1173,10 +1175,11 @@ class IntelligentGroupEngager:
         if strategy_hint:
             ctx_list = [strategy_hint] + ctx_list
 
-        # === STAGE 1: Primary generation (single LLM call — no triple critique, too slow on CPU) ===
+        # === STAGE 1: Primary generation ===
         resp = await call_qwen3_natural(
             ctx_list, target_text, chat_id=gid, high_value=True, use_think=False,
             user_id=getattr(target_msg, 'sender_id', 0) or 0,
+            skip_llm=not use_llm,
         )
 
         if not resp or not is_high_quality_natural(resp):
@@ -1189,7 +1192,7 @@ class IntelligentGroupEngager:
         except Exception:
             crit_intent = ''
 
-        if crit_intent in ('bot_question', 'complaint', 'identity_question'):
+        if use_llm and crit_intent in ('bot_question', 'complaint', 'identity_question'):
             try:
                 critique1 = (
                     f"این پاسخ رو طبیعی‌تر کن (بدون اشاره به ربات/AI). فقط متن بهبودیافته:\n"
@@ -14099,7 +14102,7 @@ async def handle_owner_command(event):
     return False
 
 
-async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = None, *, high_value: bool = False, use_think: bool = False, user_id: int = 0) -> Optional[str]:
+async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = None, *, high_value: bool = False, use_think: bool = False, user_id: int = 0, skip_llm: bool = False) -> Optional[str]:
     """
     MAJOR UPGRADED professional pipeline.
     - Uses director for variant + params
@@ -14181,39 +14184,46 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     llm_result = None
     raw = ""
     llm_err = ""
-
-    # LLM attempt (primary) — think mode ONLY when explicitly requested (too slow on CPU)
     use_think_flag = bool(use_think)
-    try:
-        if _qwen3_client is not None:
-            res = await asyncio.wait_for(
-                _qwen3_client.chat(
-                    messages, max_tokens=max_tokens, temperature=temp,
-                    use_think=use_think_flag, num_ctx=num_ctx,
-                    retries=QWEN3_MAX_RETRIES,
-                ),
-                timeout=GROUP_AI_TIMEOUT_SECONDS,
-            )
-            raw = (res.get("content") or res.get("raw") or "").strip()
-            if not raw:
-                llm_err = "empty_response"
-    except asyncio.TimeoutError:
-        llm_err = "timeout"
-        slog(f"QWEN_TIMEOUT intent={intent} gid={chat_id}")
-    except Exception as e:
-        llm_err = str(e)[:80]
-        slog(f"QWEN_ERR intent={intent} gid={chat_id}: {llm_err}")
 
-    # HTTP fallback (only if client module failed)
-    if not raw and llm_err:
+    global _last_global_qwen
+    too_soon = (time.time() - _last_global_qwen) < MIN_GLOBAL_QWEN_INTERVAL
+    if skip_llm or too_soon:
+        llm_err = "skipped" if skip_llm else "rate_limited"
+    else:
         try:
-            http_timeout = aiohttp.ClientTimeout(total=GROUP_AI_TIMEOUT_SECONDS)
+            if _qwen3_client is not None:
+                _last_global_qwen = time.time()
+                res = await asyncio.wait_for(
+                    _qwen3_client.chat(
+                        messages, max_tokens=max_tokens, temperature=temp,
+                        use_think=use_think_flag, num_ctx=num_ctx,
+                        retries=QWEN3_MAX_RETRIES,
+                    ),
+                    timeout=GROUP_AI_TIMEOUT_SECONDS,
+                )
+                raw = (res.get("content") or res.get("raw") or "").strip()
+                if not raw:
+                    llm_err = "empty_response"
+        except asyncio.TimeoutError:
+            llm_err = "timeout"
+            slog(f"QWEN_TIMEOUT intent={intent} gid={chat_id}")
+        except Exception as e:
+            llm_err = str(e)[:80]
+            slog(f"QWEN_ERR intent={intent} gid={chat_id}: {llm_err}")
+
+    # HTTP fallback only if we intended to call Qwen and the client returned nothing.
+    # Never call Qwen again after skip / rate-limit / cooldown / timeout.
+    _skip_http = llm_err in ("skipped", "rate_limited", "timeout") or "cooldown" in (llm_err or "")
+    if not raw and llm_err and not _skip_http:
+        try:
+            http_timeout = aiohttp.ClientTimeout(total=40)
             async with aiohttp.ClientSession(timeout=http_timeout) as s:
                 pp = {
                     "model": QWEN3_MODEL,
                     "messages": messages,
                     "stream": False,
-                    "think": use_think_flag,
+                    "think": False,
                     "options": {
                         "temperature": temp,
                         "num_predict": max_tokens,
@@ -14733,7 +14743,7 @@ async def group_observer_task():
                             enriched_ctx = f"Recent bot messages in group:\n{recent_bot}\n\n" + enriched_ctx
 
                         # Use engager to generate (it will further enrich with per-user history)
-                        resp = await group_engager.generate_valuable_reply(gid, target_msg, enriched_ctx)
+                        resp = await group_engager.generate_valuable_reply(gid, target_msg, enriched_ctx, use_llm=False)
 
                         if resp and is_high_quality_natural(resp) and len(resp) > 10 and not _is_repetitive_or_similar(gid, resp):
                             # Human randomness: گاهی skip برای طبیعی‌تر بودن

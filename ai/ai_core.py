@@ -355,7 +355,8 @@ KNOWLEDGE_SNIPPETS = [
     ("payment", "پرداخت فقط با ارز دیجیتال: BTC، ETH، USDT(TRC20 بهترین)، TRX، BNB، TON، SOL، DOGE. نوبیتکس و والکس خوبه. TRC20 کارمزد پایینی داره."),
     ("shipping", "ارسال سریع به تهران، استانبول، دبی، بغداد، تورنتو — معمولاً زیر ۴-۸ ساعت بعد تأیید. بسته محرمانه. خودم گرفتم سریع رسید."),
     ("shipping_time", "استانبول ۴-۸ ساعته، تهران زیر ۴ ساعت، دبی و تورنتو هم معمولاً همین‌قدر. بسته محرمانه میاد."),
-    ("ritalin", "ریتالین، کونسرتا، ساندوز — همه متیل‌فنیدات هستن برای ADHD. اورجینال اروپایی موجوده. هولوگرام داره."),
+    ("ritalin", "ریتالین، کونسرتا، ساندوز — همه متیل‌فنیدات هستن برای ADHD و بیش‌فعالی. اورجینال اروپایی موجوده. هولوگرام داره."),
+    ("adhd", "برای ADHD معمولاً ریتالین یا کونسرتا اول مطرح میشه. دوز رو باید پزشک بده. اورجینال اروپایی با ایرانی فرق کیفیت داره."),
     ("semaglutide", "اوزمپیک / سماگلوتاید برای دیابت نوع ۲ و کاهش وزن. ویگوی هم موجوده. نووو نوردیسک اورجینال."),
     ("tirzepatide", "مونجارو (تیرزپاتید) مشابه اوزمپیک ولی قوی‌تر. برای کنترل قند و کاهش وزن. اورجینال موجوده."),
     ("modafinil", "مودافینیل برای تمرکز و بیداری. مودالرت هم همون ماده‌ست. خودم استفاده کردم خوبه."),
@@ -371,7 +372,7 @@ KNOWLEDGE_SNIPPETS = [
 ]
 
 DRUG_ALIASES = {
-    'methylphenidate': ['ریتالین', 'متیل‌فنیدات', 'کونسرتا', 'ساندوز', 'پرکتیسا', 'وایاس', 'آدرال'],
+    'methylphenidate': ['ریتالین', 'متیل‌فنیدات', 'کونسرتا', 'ساندوز', 'پرکتیسا', 'وایاس', 'آدرال', 'adhd', 'بیش فعالی', 'بیش‌فعالی'],
     'semaglutide': ['اوزمپیک', 'سماگلوتاید', 'ویگوی', 'wegovy'],
     'tirzepatide': ['مونجارو', 'تیرزپاتید', 'mounjaro'],
     'modafinil': ['مودافینیل', 'مودالرت', 'پروویجیل'],
@@ -388,7 +389,7 @@ DRUG_FAMILIES: Dict[str, Dict] = {
         'active_ingredient_en': 'Methylphenidate',
         'indication_fa': 'درمان اختلال کمبود توجه و بیش‌فعالی (ADHD) و نارکولپسی',
         'indication_en': 'Treatment of ADHD and narcolepsy',
-        'aliases_fa': ['ریتالین', 'ریتالین la', 'پرکتیسا', 'پرکتیزا', 'کونسرتا', 'کنسرتا', 'متیل فنیدات', 'متیل‌فنیدات', 'ساندوز', 'وایاس', 'آدرال', 'مایدیس', 'مشکا', 'مدی کی'],
+        'aliases_fa': ['ریتالین', 'ریتالین la', 'پرکتیسا', 'پرکتیزا', 'کونسرتا', 'کنسرتا', 'متیل فنیدات', 'متیل‌فنیدات', 'ساندوز', 'وایاس', 'آدرال', 'مایدیس', 'مشکا', 'مدی کی', 'بیش فعالی', 'بیش‌فعالی', 'adhd'],
         'aliases_en': ['ritalin', 'ritalin la', 'percista', 'percitza', 'concerta', 'methylphenidate', 'sandoz', 'vyas', 'adderall', 'mydayis', 'medikinet'],
         'iran_brands_fa': ['پرکتیسا', 'مشکا', 'مدی کی'],
     },
@@ -492,8 +493,14 @@ def get_drug_context_snippet(text: str, language: str = 'fa') -> str:
             return f"{ai}: {ind}."
     return ''
 
+_RETRIEVE_STOP = frozenset({
+    'برای', 'چیه', 'چیست', 'پیشنهاد', 'میکنید', 'میکنی', 'هست', 'داره', 'کنید',
+    'بده', 'بگو', 'کسی', 'این', 'اون', 'که', 'از', 'با', 'تو', 'رو', 'چی',
+    'product', 'search', 'unknown', 'help', 'request',
+})
+
 def retrieve_knowledge(query: str, intent: str = "") -> str:
-    """Stronger retrieval (scoring + topic + drug + intent map, web3test retriever inspired)."""
+    """Stronger retrieval (scoring + topic + drug + intent map). Ignores stopwords."""
     q = ((query or "") + " " + (intent or "")).lower()
     hits = []
     for key, txt in KNOWLEDGE_SNIPPETS:
@@ -502,10 +509,10 @@ def retrieve_knowledge(query: str, intent: str = "") -> str:
         if key in ql:
             sc += 4.0
         for tok in key.split('_'):
-            if tok and tok in ql:
+            if tok and len(tok) > 3 and tok in ql:
                 sc += 2.0
         for w in ql.split():
-            if len(w) > 3 and w in txt.lower():
+            if len(w) > 3 and w not in _RETRIEVE_STOP and w in txt.lower():
                 sc += 0.8
         if sc > 0:
             hits.append((sc, txt))
@@ -745,6 +752,9 @@ def repair_llm_output(text: str, language: str = 'fa') -> str:
         flags=re.I,
     )
     text = re.sub(r'(سانتیمتر|سانتی‌متر|کیلومتر)', '', text, flags=re.I)
+    # Random clock hallucinations ("وقت ۲ صبح")
+    text = re.sub(r'وقت\s*\d+\s*(صبح|شب|ظهر)', '', text)
+    text = re.sub(r'ساعت\s*\d+\s*تا\s*\d+\s*(روز|شب|صبح)', '', text)
     # Don't spam the same personal claim
     if text.count('خودم گرفتم') > 1:
         first = text.find('خودم گرفتم')

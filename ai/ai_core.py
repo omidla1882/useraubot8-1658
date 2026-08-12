@@ -521,7 +521,7 @@ def retrieve_knowledge(query: str, intent: str = "") -> str:
     if fam_key:
         info = get_family_info(fam_key)
         if info:
-            hits.append((6.0, f"{info.get('active_ingredient','')}: {info.get('indication','')}"))
+            hits.append((4.2, f"{info.get('active_ingredient','')}: {info.get('indication','')}"))
     for fam, als in DRUG_ALIASES.items():
         if any(a.lower() in q for a in als):
             for key, txt in KNOWLEDGE_SNIPPETS:
@@ -824,7 +824,11 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
     def _naturalize_knowledge(raw: str, intent: str) -> Optional[str]:
         if not raw or len(raw) < 15:
             return None
-        first = raw.split('\n')[0].strip()[:200]
+        lines = [ln.strip() for ln in raw.split('\n') if ln.strip()]
+        first = lines[0][:200]
+        # Skip encyclopedia "Ingredient: indication" lines — prefer conversational snippets
+        if ':' in first[:48] and len(lines) > 1:
+            first = lines[1][:200]
         # Convert factual snippets to peer voice — vary endings so it doesn't loop
         peer_prefixes = ["راستش ", "معمولاً ", "به نظرم ", ""]
         endings = {

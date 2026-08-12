@@ -15,8 +15,8 @@ import argparse
 import subprocess
 import sys
 
-QWEN_SSH = 'railway ssh --project=67a0d330-0f2d-47d5-8155-ff98bcd745a4 --environment=9595b135-9d55-4887-8226-eab3b2811801 --service=5874a712-a22c-4617-b9e5-b2464e7dac47'
-WEBUI_SSH = 'railway ssh --project=67a0d330-0f2d-47d5-8155-ff98bcd745a4 --environment=9595b135-9d55-4887-8226-eab3b2811801 --service=e60e0fa0-afcf-461c-9a8d-ac025b46cc46'
+QWEN_SSH = 'railway ssh --project=5468a68d-4b4b-4867-838b-68ee92ef25cc --environment=f4f95a90-6fcf-4c67-8a56-9611fff95d51 --service=8085e69d-e4cc-4895-a064-61b20f7e572f'
+USERBOT_SSH = 'railway ssh --project=5468a68d-4b4b-4867-838b-68ee92ef25cc --environment=f4f95a90-6fcf-4c67-8a56-9611fff95d51 --service=3b6dfc79-32dc-44ee-b5b0-a10bace31707'
 
 def run_ssh(cmd: str, extra: str = ""):
     full = f"{cmd} {extra}".strip()
@@ -38,8 +38,7 @@ def main():
         run_ssh(QWEN_SSH, '"curl -s http://localhost:11434/api/tags || echo no direct curl; ps aux | grep ollama || true"')
 
     if args.webui:
-        print("Inspecting Open-WebUI for optimal Qwen3 settings...")
-        run_ssh(WEBUI_SSH, '"echo \"OpenWebUI usually on :8080 or :3000\"; curl -s http://localhost:8080/api/models || echo check UI manually"')
+        print("Open-WebUI not configured for this project. Use --qwen instead.")
 
     if args.test:
         print("Local test of ai/ modules (no live Qwen required for logic):")
@@ -55,11 +54,13 @@ def main():
 
     if not any([args.qwen, args.webui, args.test]):
         print("Recommended commands (copy-paste):")
-        print("  ", QWEN_SSH)
-        print("  ", WEBUI_SSH)
-        print("\nInside the shells explore:")
-        print("  curl http://localhost:11434/api/tags   # for raw Ollama")
-        print("  Check OpenWebUI UI for the qwen3:1.7b model parameters and any system prompt.")
+        print("  Userbot:", USERBOT_SSH)
+        print("  Qwen3:  ", QWEN_SSH)
+        print("\nInside userbot shell:")
+        print('  python -c "import asyncio, bot as b; print(asyncio.run(b.check_qwen_health())); print(asyncio.run(b.run_ai_self_test(3)))"')
+        print("  tail -n 30 remember/ai_logs/responses-$(date +%Y-%m-%d).log")
+        print("\nInside Qwen shell:")
+        print("  curl -s http://localhost:11434/api/tags")
 
 if __name__ == "__main__":
     main()

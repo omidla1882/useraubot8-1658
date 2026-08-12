@@ -648,7 +648,8 @@ QWEN3_MODEL = os.environ.get('QWEN3_MODEL', 'qwen3:1.7b')
 
 # محدودیت: حداکثر 1 پاسخ AI در هر گروه در این بازه زمانی (ثانیه) — STRONG anti-spam
 GROUP_AI_COOLDOWN_SECONDS = 90    # حداقل 90 ثانیه بین پاسخ‌های غیر mention
-GROUP_AI_TIMEOUT_SECONDS = 75     # زمان بیشتر برای مدل کند CPU
+GROUP_AI_TIMEOUT_SECONDS = 95     # زمان بیشتر برای مدل کند CPU (qwen3:1.7b)
+QWEN3_MAX_RETRIES = 2             # تلاش مجدد در صورت timeout
 
 # ═══════════════════════════════════════════════════════════
 # 🛡️ SMART ANTI-SPAM / ANTI-DUPLICATE GUARD
@@ -1132,6 +1133,7 @@ class IntelligentGroupEngager:
         """
         target_text = (target_msg.text or "").strip()
         key = self._user_key(gid, getattr(target_msg, 'sender_id', 0) or 0)
+        turns = len(self.user_group_state.get(key, {}).get("turns", []))
 
         # Ultra-rich context
         ctx_list = []
@@ -1220,44 +1222,30 @@ class IntelligentGroupEngager:
         if strategy_hint:
             ctx_list = [strategy_hint] + ctx_list
 
-        # === STAGE 1: Primary generation (high value mode) ===
+        # === STAGE 1: Primary generation (single LLM call — no triple critique, too slow on CPU) ===
         resp = await call_qwen3_natural(ctx_list, target_text, chat_id=gid, high_value=True, use_think=False)
 
         if not resp or not is_high_quality_natural(resp):
             return None
 
-        # === STAGE 2: Mandatory Critique #1 (Naturalness & AI-tell removal) ===
+        # === STAGE 2: Optional light critique (only for bot_question / complaint — 1 extra call max) ===
         try:
-            critique1 = (
-                "You are a strict Persian human-chat editor for Telegram groups.\n"
-                "Critique for: completely natural spoken Persian like a regular experienced user, NO mention or defense about being a bot/AI/robot ('من ربات نیستم', 'چرا فکر کردی رباتم', 'شبیه ربات'), no meta comments, no lists, real casual tone with personal experience words.\n"
-                "If the reply is defensive about AI or sounds like it is hiding being a bot, REWRITE it to a normal helpful group member reply.\n"
-                "If it is already excellent natural human chat say exactly 'OK'.\n"
-                "Otherwise output only the improved natural version (3-6 lines max).\n\n"
-                f"User said: {target_text}\n"
-                f"Current reply: {resp}\n\n"
-                "Your output (OK or improved text only):"
-            )
-            c1 = await call_qwen3_natural([], critique1, chat_id=gid, high_value=True, use_think=True)
-            if c1 and c1.strip().upper() != "OK" and is_high_quality_natural(c1) and len(c1) > 18:
-                resp = c1.strip()
+            from ai.ai_core import classify_intent as _ci
+            crit_intent = _ci(target_text).get('intent', '')
         except Exception:
-            pass
+            crit_intent = ''
 
-        # === STAGE 3: Mandatory Critique #2 (Value + Rapport + Funnel potential) ===
-        try:
-            critique2 = (
-                "نقد دوم: آیا این پاسخ ارزش واقعی (تجربه شخصی، جزئیات مفید) به کاربر می‌دهد؟ آیا مثل حرف یک آدم معمولی در گروه است؟ "
-                "هرگز نباید هیچ اشاره‌ای به ربات، هوش مصنوعی، یا دفاع از انسان بودن باشد. "
-                "اگر عالی و طبیعی است بگو 'OK'. در غیر این صورت نسخه کوتاه‌تر، مفیدتر و کاملاً انسانی بنویس.\n\n"
-                f"متن کاربر: {target_text}\nپاسخ: {resp}\n\n"
-                "خروجی: OK یا متن بهبودیافته:"
-            )
-            c2 = await call_qwen3_natural([], critique2, chat_id=gid, high_value=True, use_think=True)
-            if c2 and c2.strip().upper() != "OK" and is_high_quality_natural(c2) and len(c2) > 18:
-                resp = c2.strip()
-        except Exception:
-            pass
+        if crit_intent in ('bot_question', 'complaint', 'identity_question'):
+            try:
+                critique1 = (
+                    f"این پاسخ رو طبیعی‌تر کن (بدون اشاره به ربات/AI). فقط متن بهبودیافته:\n"
+                    f"کاربر: {target_text}\nپاسخ: {resp}"
+                )
+                c1 = await call_qwen3_natural([], critique1, chat_id=gid, high_value=False, use_think=False)
+                if c1 and c1.strip().upper() != "OK" and is_high_quality_natural(c1) and len(c1) > 18:
+                    resp = c1.strip()
+            except Exception:
+                pass
 
         # Extra safety pass: if still contains defensive AI talk after critiques, discard
         if any(bad in (resp or '').lower() for bad in ['رباتم', 'ربات نیستم', 'شبیه ربات', 'فکر کردی ربات', 'هوش مصنوعی هستم']):
@@ -1278,8 +1266,8 @@ class IntelligentGroupEngager:
         """Central entry point for any group message that deserves reply."""
         if not can_send_to_group_safely(gid):
             return None
-        # Human-like lurking: randomly skip even good opportunities to look less active
-        if random.random() < 0.25:
+        # Human-like lurking: occasionally skip to look less active (reduced from 25% to 10%)
+        if random.random() < 0.10:
             return None
         try:
             best = await self.select_best_message_to_reply(gid, [msg] if msg else [])
@@ -13483,9 +13471,9 @@ def _expand_drug_query(q: str) -> str:
 
 TEMPLATE_RESPONSES: Dict[str, list] = {
     'bot_question': [
-        "من یکی از بچه‌های گروهم، تجربه‌ای دارم تو این زمینه. بگو چی لازم داری دقیق‌تر.",
-        "عضو معمولی اینجام و چند بار این کار رو کردم. جزئیات رو بگو ببینم کمک کنم.",
-        "اینجام، حرف بزن ببینم چی تو سرته. معمولاً بستگه داره.",
+        "آره اینجام. بگو ببینم چی میخوای.",
+        "بگو چی شده، شاید بتونم کمک کنم.",
+        "حرف بزن ببینم. معمولاً بستگه داره به چیزی که میخوای.",
     ],
     'identity_question': [
         "یه عضو معمولی این گروهم که یه کم تجربه داره.",
@@ -13538,15 +13526,14 @@ TEMPLATE_RESPONSES: Dict[str, list] = {
         "انسولین خارجی هم میاد. باید سرد نگه داشته بشه. بگو کدوم مدل مدنظرت هست.",
     ],
     'tramadol': [
-        "از فارماوب میشه پیدا کرد",
-        "فارماوب داره، medpharmaweb.com چک کن",
+        "ترامادول مسکن قویه. کنترل دسترسی داره. بگو دقیق چی میخوای بدونم.",
+        "این موضوع رو میشناسم. جزئیات بیشتری بده.",
     ],
     'pharma_general': [
-        "فارماوب داره، اروپاییه. medpharmaweb.com",
-        "از فارماوب میشه گرفت، معتبره",
-        "چک کن medpharmaweb.com، داره",
-        "فارماوب چند ماهه موجوده، اصلیه",
-        "از فارماوب بگیر، بچه‌های گروه تجربه دارن",
+        "بگو دقیق چی میخوای، شاید بتونم راهنماییت کنم.",
+        "این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.",
+        "بستگه داره به چیزی که دنبالشی. جزئیات رو بگو.",
+        "آره این حوزه رو میشناسم. تو کدوم شهر هستی؟",
     ],
     # Shipping
     'shipping_time': [
@@ -13792,9 +13779,22 @@ GROUP_SYSTEM_PROMPT = (
 )
 
 def build_group_messages(user_text: str, retrieved: str, recent_ctx: list, exchange_lines: list, notes: str, mem_ctx: str, *, director_addon: str = "", few_shots: str = "") -> list:
-    """Professional prompt builder. Injects director decisions + few-shots + rich context for complete, natural, human replies.
-    This is the key to making Qwen3 output high-quality multi-sentence chat.
-    """
+    """Professional prompt builder — uses compact V2 prompt for qwen3:1.7b."""
+    try:
+        from ai.prompt_builder import build_qwen_messages
+        return build_qwen_messages(
+            user_text,
+            retrieved=retrieved or "",
+            recent_ctx=recent_ctx or [],
+            exchange_lines=exchange_lines or [],
+            notes=notes or "",
+            mem_ctx=mem_ctx or "",
+            director_addon=director_addon or "",
+            few_shots=few_shots or "",
+        )
+    except ImportError:
+        pass
+
     sys_prompt = GROUP_SYSTEM_PROMPT
     if director_addon:
         sys_prompt = sys_prompt + "\n\n" + director_addon
@@ -13816,14 +13816,9 @@ def build_group_messages(user_text: str, retrieved: str, recent_ctx: list, excha
     if ctx_parts:
         messages.append({"role": "system", "content": "\n\n".join(ctx_parts)[:720]})
 
-    # Strong final instruction for complete human-like output (force multi-line natural)
     instruction = (
         f"کاربر گفت: {user_text}\n\n"
-        "حالا یه جواب کامل ۳ تا ۶ خطه، طبیعی، صمیمی و محاوره‌ای مثل حرف زدن با دوست قدیمی در گروه بنویس. "
-        "هر جمله کامل با فعل و نقطه یا سوال تموم بشه. از کلمات واقعی مثل 'خودم گرفتم' و 'معمولاً' استفاده کن. "
-        "اگر لازم بود یه سوال سبک برای ادامه اضافه کن. هیچ لیست، هیچ تبلیغ مستقیم، هیچ جواب کوتاه نده. "
-        "همیشه کامل فکر کن و حداقل ۳ خط بنویس. "
-        "هرگز حتی یک کلمه در مورد 'ربات'، 'هوش مصنوعی'، 'چرا فکر کردی من رباتم' یا دفاع از انسان بودن ننویس — فقط مثل یه آدم معمولی با تجربه واقعی حرف بزن."
+        "جواب طبیعی ۲-۴ جمله‌ای بنویس. مثل دوست حرف بزن. سوال کوتاه آخر."
     )
     messages.append({"role": "user", "content": instruction})
     return messages
@@ -14186,9 +14181,9 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     except Exception:
         director_cfg = {'temperature': 0.45, 'max_tokens': 320, 'system_addon': ''}
 
-    temp = director_cfg.get('temperature', 0.42)
-    max_tokens = director_cfg.get('max_tokens', 420)
-    num_ctx = 4096
+    temp = director_cfg.get('temperature', 0.44)
+    max_tokens = director_cfg.get('max_tokens', 260)
+    num_ctx = 3072
     dir_addon = director_cfg.get('system_addon', '')
 
     # Few shots for grounding
@@ -14196,7 +14191,7 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     try:
         if USE_AI_CORE:
             from ai.ai_core import get_few_shots_for_prompt as _fs
-            few_shots = _fs(user_text, k=3)
+            few_shots = _fs(user_text, k=2)
     except Exception:
         pass
 
@@ -14222,46 +14217,56 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
 
     llm_result = None
     raw = ""
+    llm_err = ""
 
-    # LLM attempt 1 (primary)
+    # LLM attempt (primary) — think mode ONLY when explicitly requested (too slow on CPU)
+    use_think_flag = bool(use_think)
     try:
-        use_think_flag = bool(use_think or high_value)  # critique paths use thinking
         if _qwen3_client is not None:
             res = await asyncio.wait_for(
-                _qwen3_client.chat(messages, max_tokens=max_tokens, temperature=temp,
-                                   use_think=use_think_flag, num_ctx=num_ctx),
-                timeout=82.0
+                _qwen3_client.chat(
+                    messages, max_tokens=max_tokens, temperature=temp,
+                    use_think=use_think_flag, num_ctx=num_ctx,
+                    retries=QWEN3_MAX_RETRIES,
+                ),
+                timeout=GROUP_AI_TIMEOUT_SECONDS,
             )
             raw = (res.get("content") or res.get("raw") or "").strip()
-    except Exception:
-        pass
+            if not raw:
+                llm_err = "empty_response"
+    except asyncio.TimeoutError:
+        llm_err = "timeout"
+        slog(f"QWEN_TIMEOUT intent={intent} gid={chat_id}")
+    except Exception as e:
+        llm_err = str(e)[:80]
+        slog(f"QWEN_ERR intent={intent} gid={chat_id}: {llm_err}")
 
-    # HTTP fallback with stronger settings
-    if not raw:
+    # HTTP fallback (only if client module failed)
+    if not raw and llm_err:
         try:
-            http_timeout = aiohttp.ClientTimeout(total=78)
+            http_timeout = aiohttp.ClientTimeout(total=GROUP_AI_TIMEOUT_SECONDS)
             async with aiohttp.ClientSession(timeout=http_timeout) as s:
                 pp = {
                     "model": QWEN3_MODEL,
                     "messages": messages,
                     "stream": False,
-                    "think": bool(use_think or high_value),
+                    "think": use_think_flag,
                     "options": {
                         "temperature": temp,
                         "num_predict": max_tokens,
                         "num_ctx": num_ctx,
-                        "top_p": 0.88,
-                        "top_k": 45,
-                        "repeat_penalty": 1.12,
-                        "presence_penalty": 0.08,
+                        "top_p": 0.90,
+                        "top_k": 40,
+                        "repeat_penalty": 1.15,
                     }
                 }
                 async with s.post(f"{QWEN3_BASE_URL}/api/chat", json=pp) as rr:
                     if rr.status == 200:
                         dd = await rr.json(content_type=None)
                         raw = (dd.get('message', {}).get('content') or '').strip()
-        except Exception:
-            pass
+                        llm_err = "" if raw else "http_empty"
+        except Exception as e2:
+            llm_err = f"http:{str(e2)[:50]}"
 
     if raw:
         cleaned = _clean_natural(raw)
@@ -14271,34 +14276,33 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
             cleaned = _r(cleaned)
         except Exception:
             pass
-        if is_high_quality_natural(cleaned) and len(cleaned) >= 25:
+        if is_high_quality_natural(cleaned) and len(cleaned) >= 22:
             llm_result = cleaned
 
-    # === RE-PROMPT LOOP for weak/incomplete outputs (critical upgrade) ===
-    if (not llm_result or not is_high_quality_natural(llm_result or "")) and raw:
+    # Re-prompt only if we got raw text but quality gate rejected it (skip if timeout)
+    if (not llm_result) and raw and not llm_err:
         try:
-            # Stronger second prompt: force completeness
             force_messages = list(messages)
             force_messages.append({
                 "role": "user",
-                "content": "جواب قبلی ناقص یا ضعیف بود. حالا یه جواب کامل، طبیعی، ۴-۶ خطه با فعل و نقطه و سوال سبک بنویس. مثل انسان واقعی حرف بزن."
+                "content": "جواب قبلی ضعیف بود. ۲-۳ جمله طبیعی فارسی بنویس. مثل دوست حرف بزن."
             })
-            raw2 = ""
             if _qwen3_client is not None:
                 res2 = await asyncio.wait_for(
-                    _qwen3_client.chat(force_messages, max_tokens=340, temperature=0.48, use_think=False, num_ctx=4096),
-                    timeout=65
+                    _qwen3_client.chat(force_messages, max_tokens=240, temperature=0.48,
+                                       use_think=False, num_ctx=num_ctx, retries=1),
+                    timeout=GROUP_AI_TIMEOUT_SECONDS,
                 )
                 raw2 = (res2.get("content") or "").strip()
-            if raw2:
-                c2 = _clean_natural(_repair_group_output(raw2))
-                try:
-                    from ai.ai_core import repair_llm_output as _r2
-                    c2 = _r2(c2)
-                except Exception:
-                    pass
-                if is_high_quality_natural(c2) and len(c2) >= 30:
-                    llm_result = c2
+                if raw2:
+                    c2 = _clean_natural(_repair_group_output(raw2))
+                    try:
+                        from ai.ai_core import repair_llm_output as _r2
+                        c2 = _r2(c2)
+                    except Exception:
+                        pass
+                    if is_high_quality_natural(c2) and len(c2) >= 25:
+                        llm_result = c2
         except Exception:
             pass
 
@@ -14307,6 +14311,7 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     rep_fn = (_core_is_repeated if (USE_AI_CORE and _core_is_repeated) else is_repeated_response)
 
     result = None
+    # Priority: LLM > enriched local > template (templates feel robotic — last resort)
     candidates = [c for c in [llm_result, fast_local, template] if c and len(str(c).strip()) > 18]
 
     for cand in candidates:
@@ -14361,8 +14366,8 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
         except Exception:
             pass
         log_ai_response(
-            f"OK intent={intent} llm={'yes' if llm_result else 'no'} gid={chat_id}",
-            raw[:120] if 'raw' in locals() else "",
+            f"OK intent={intent} llm={'yes' if llm_result else 'no'} err={llm_err or 'none'} gid={chat_id}",
+            raw[:120] if raw else "",
             result[:160],
         )
 

@@ -583,26 +583,24 @@ class ModelDirector:
         return self.direct(intent, plan, user_text, has_knowledge, high_value)
 
     def direct(self, intent: str, plan: dict, user_text: str, has_knowledge: bool, has_history: bool) -> dict:
-        """Return directed config: system_addon, use_think, temperature, max_tokens, post_notes.
-        Strongly biases toward complete, multi-sentence natural human chat replies.
-        """
-        use_think = False
-        temp = 0.42 if intent in ('faq_order_process', 'shipping_time', 'tracking', 'payment_crypto_help') else 0.47
+        """Return directed config optimized for qwen3:1.7b on CPU."""
+        use_think = False  # think mode too slow on 1.7b CPU — disabled by default
+        temp = 0.40 if intent in ('faq_order_process', 'shipping_time', 'tracking', 'payment_crypto_help') else 0.46
 
         variant = 'general_engage'
         if intent in ('payment_crypto_help', 'crypto_info', 'shipping_time', 'tracking', 'faq_order_process') and has_knowledge:
             variant = 'real_answer'
-        elif random.random() < 0.35:
+        elif intent in ('greeting', 'thanks', 'presence_check', 'goodbye'):
+            variant = 'general_engage'
+        elif has_knowledge and random.random() < 0.25:
             variant = 'attract_value'
-        if has_history and random.random() < 0.45:
+        if has_history and random.random() < 0.30:
             variant = 'funnel'
 
         addon = self.variants.get(variant, self.variants['general_engage'])
-        # Force complete replies: 3-6 lines natural text
-        max_t = 320 if has_knowledge or has_history else 240
+        max_t = 240 if has_knowledge or has_history else 200
 
-        # Stronger instruction addon
-        completeness = " جواب کامل و طبیعی بده (۳ تا ۶ خط محاوره‌ای با فعل و نقطه). مثل یه آدم واقعی حرف بزن. جملات رو کامل کن."
+        completeness = " ۲-۴ جمله کامل محاوره‌ای. مثل آدم واقعی."
         addon = addon + completeness
 
         return {
@@ -778,8 +776,30 @@ def get_few_shots_for_prompt(query: str, k: int = 3) -> str:
     return "\n".join([s[1] for s in scored[:k]]) if scored else ""
 
 def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: str = "", style: str = "general_engage") -> str:
-    """Fast, natural Persian reply. Uses intent pools and FEW_SHOT_BANK — never pastes raw knowledge text."""
+    """High-quality local reply when Qwen is slow/unavailable. Never raw knowledge paste."""
 
+    # Enrich from retrieved knowledge into natural sentences
+    def _naturalize_knowledge(raw: str, intent: str) -> Optional[str]:
+        if not raw or len(raw) < 15:
+            return None
+        first = raw.split('\n')[0].strip()[:200]
+        # Convert factual snippets to peer voice
+        peer_prefixes = [
+            "از تجربه‌ام، ", "معمولاً ", "خودم که ", "راستش ", "به نظرم ",
+        ]
+        if intent == 'shipping_time':
+            return random.choice(peer_prefixes) + first + " تو کدوم شهر هستی؟"
+        if intent in ('crypto_info', 'payment_crypto_help'):
+            return random.choice(peer_prefixes) + first + " سوالی داری بپرس."
+        if intent in ('product_search', 'stock_check'):
+            return first + " بگو دقیق‌تر چی میخوای."
+        return random.choice(peer_prefixes) + first
+
+    # Try knowledge-grounded natural reply first
+    if retrieved:
+        natural = _naturalize_knowledge(retrieved, intent)
+        if natural and len(natural) >= 30:
+            return natural
     # 1. Instant pools for social intents
     _SOCIAL = {
         'greeting': [

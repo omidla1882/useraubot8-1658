@@ -1,18 +1,26 @@
 """
-Async LLM client for userbotai — optimized for qwen3:1.7b.
-Supports think=true for internal reasoning (professional feature).
-Uses aiohttp to match the rest of the Telethon bot.
+Async LLM client for userbotai — optimized for qwen3:1.7b on Railway CPU.
+Supports think=true for complex queries only (slow on CPU).
+Retry + shared session for reliability.
 """
 
 import asyncio
+import logging
 import os
 import re
+import time
 from typing import Dict, List, Optional, Tuple
 
 import aiohttp
 
-# Simple semaphore to protect the small model on CPU
-_inference_sem = asyncio.Semaphore(int(os.getenv('CHAT_AI_MAX_CONCURRENT', '2')))
+_log = logging.getLogger("qwen3")
+
+# Protect small CPU model from overload
+_inference_sem = asyncio.Semaphore(int(os.getenv('CHAT_AI_MAX_CONCURRENT', '1')))
+
+# Shared session (reuse TCP connections to Qwen service)
+_shared_session: Optional[aiohttp.ClientSession] = None
+_session_lock = asyncio.Lock()
 
 
 def _parse_think_blocks(text: str) -> Tuple[str, str]:
@@ -28,8 +36,20 @@ def _parse_think_blocks(text: str) -> Tuple[str, str]:
     return thinking, final
 
 
+async def _get_session() -> aiohttp.ClientSession:
+    """Reuse HTTP session for Qwen API calls."""
+    global _shared_session
+    async with _session_lock:
+        if _shared_session is None or _shared_session.closed:
+            total = float(os.getenv('QWEN3_TIMEOUT', '95'))
+            _shared_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=total, connect=12, sock_read=total),
+            )
+        return _shared_session
+
+
 class Qwen3Client:
-    """Async client with explicit thinking support for intelligent Qwen3 responses."""
+    """Async client tuned for qwen3:1.7b on Railway CPU."""
 
     def __init__(self):
         self.base_url = os.getenv(
@@ -37,21 +57,29 @@ class Qwen3Client:
             os.getenv('OLLAMA_BASE_URL', 'http://qwen3.railway.internal:11434'),
         ).rstrip('/')
         self.model = os.getenv('QWEN3_MODEL', os.getenv('OLLAMA_MODEL', 'qwen3:1.7b'))
-        self.timeout = float(os.getenv('QWEN3_TIMEOUT', '120'))
-        self.default_max_tokens = int(os.getenv('QWEN3_MAX_TOKENS', '420'))
-        self.default_temperature = float(os.getenv('QWEN3_TEMPERATURE', '0.42'))
-        self.default_num_ctx = int(os.getenv('QWEN3_NUM_CTX', '4096'))
+        self.timeout = float(os.getenv('QWEN3_TIMEOUT', '95'))
+        self.default_max_tokens = int(os.getenv('QWEN3_MAX_TOKENS', '280'))
+        self.default_temperature = float(os.getenv('QWEN3_TEMPERATURE', '0.44'))
+        self.default_num_ctx = int(os.getenv('QWEN3_NUM_CTX', '3072'))
+        self._last_health: Tuple[bool, float] = (False, 0.0)
 
     async def is_available(self) -> bool:
+        """Cached health check (30s TTL)."""
+        now = time.time()
+        if now - self._last_health[1] < 30:
+            return self._last_health[0]
+        ok = False
         try:
-            timeout = aiohttp.ClientTimeout(total=8)
-            async with aiohttp.ClientSession(timeout=timeout) as sess:
-                async with sess.get(f"{self.base_url}/api/tags") as resp:
+            sess = await _get_session()
+            async with sess.get(f"{self.base_url}/api/tags") as resp:
+                if resp.status == 200:
                     data = await resp.json(content_type=None)
                     models = [m.get('name', '') for m in data.get('models', [])]
-                    return any(self.model.split(':')[0] in m for m in models) or bool(models)
-        except Exception:
-            return False
+                    ok = any(self.model.split(':')[0] in m for m in models) or bool(models)
+        except Exception as e:
+            _log.warning("Qwen health check failed: %s", e)
+        self._last_health = (ok, now)
+        return ok
 
     async def chat(
         self,
@@ -60,11 +88,12 @@ class Qwen3Client:
         max_tokens: Optional[int] = None,
         temperature: Optional[float] = None,
         use_think: bool = False,
-        num_ctx: int = 3584,
+        num_ctx: Optional[int] = None,
+        retries: int = 2,
     ) -> Dict:
         """
-        Send chat. If use_think=True we ask for reasoning trace (internal intelligence).
-        Returns dict with 'content', 'thinking', 'raw', 'model', 'time'.
+        Send chat to Qwen3. Retries on timeout/5xx.
+        use_think=True only for critique paths (very slow on CPU).
         """
         payload = {
             "model": self.model,
@@ -75,38 +104,48 @@ class Qwen3Client:
                 "temperature": temperature if temperature is not None else self.default_temperature,
                 "num_predict": max_tokens or self.default_max_tokens,
                 "num_ctx": num_ctx or self.default_num_ctx,
-                "top_p": 0.87,
-                "top_k": 42,
-                "repeat_penalty": 1.14,
-                "repeat_last_n": 128,
-                "presence_penalty": 0.1,
-                "frequency_penalty": 0.08,
+                "top_p": 0.90,
+                "top_k": 40,
+                "repeat_penalty": 1.15,
+                "repeat_last_n": 96,
                 "num_thread": int(os.getenv('QWEN3_NUM_THREAD', '4')),
             },
         }
 
-        start = asyncio.get_event_loop().time()
-        async with _inference_sem:
-            timeout = aiohttp.ClientTimeout(total=self.timeout)
-            async with aiohttp.ClientSession(timeout=timeout) as sess:
-                async with sess.post(f"{self.base_url}/api/chat", json=payload) as r:
-                    if r.status != 200:
-                        raise RuntimeError(f"Qwen3 chat failed: {r.status}")
-                    data = await r.json(content_type=None)
+        last_err = None
+        start = time.time()
 
-        elapsed = asyncio.get_event_loop().time() - start
-        msg = data.get("message", {}) or {}
-        raw = (msg.get("content") or "").strip()
-        thinking, final = _parse_think_blocks(raw)
+        for attempt in range(retries + 1):
+            try:
+                async with _inference_sem:
+                    sess = await _get_session()
+                    async with sess.post(f"{self.base_url}/api/chat", json=payload) as r:
+                        if r.status != 200:
+                            body = await r.text()
+                            raise RuntimeError(f"Qwen3 HTTP {r.status}: {body[:120]}")
+                        data = await r.json(content_type=None)
 
-        return {
-            "content": final,
-            "thinking": thinking,
-            "raw": raw,
-            "model": self.model,
-            "time": round(elapsed, 2),
-            "tokens": data.get("eval_count", 0) + data.get("prompt_eval_count", 0),
-        }
+                elapsed = time.time() - start
+                msg = data.get("message", {}) or {}
+                raw = (msg.get("content") or "").strip()
+                thinking, final = _parse_think_blocks(raw)
+
+                return {
+                    "content": final,
+                    "thinking": thinking,
+                    "raw": raw,
+                    "model": self.model,
+                    "time": round(elapsed, 2),
+                    "tokens": data.get("eval_count", 0) + data.get("prompt_eval_count", 0),
+                    "ok": bool(final),
+                }
+            except (asyncio.TimeoutError, aiohttp.ClientError, RuntimeError) as e:
+                last_err = e
+                _log.warning("Qwen attempt %d/%d failed: %s", attempt + 1, retries + 1, e)
+                if attempt < retries:
+                    await asyncio.sleep(1.5 * (attempt + 1))
+
+        raise RuntimeError(f"Qwen3 failed after {retries + 1} attempts: {last_err}")
 
 
 # Global instance used by the bot

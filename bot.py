@@ -1233,21 +1233,16 @@ class IntelligentGroupEngager:
         return None
 
     async def generate_starter(self, gid: int, recent_ctx: str = "") -> Optional[str]:
-        """Dynamic, context-aware natural starter using engager + engines."""
+        """Use curated starters. Do not call Qwen here — it starves real replies."""
         try:
             if not can_send_to_group_safely(gid):
                 return None
-            probe = recent_ctx[:450] if recent_ctx else "نکته مفید واقعی در مورد داروهای کمیاب یا تجربیات واقعی کاربران"
-            dyn = await call_qwen3_natural([recent_ctx] if recent_ctx else [], 
-                                           f"مثل یک عضو واقعی گروه، یک نظر یا سوال کوتاه و جالب برای شروع گفتگو بگو (کاملاً طبیعی، بدون تبلیغ): {probe}", 
-                                           chat_id=gid, high_value=False)
-            if dyn and is_high_quality_natural(dyn):
-                return _clean_natural(dyn)
-            # fallback to viral value starter
-            viral = viral_engine.generate_viral_content('valuable_info') if 'viral_engine' in globals() else None
-            if viral and is_high_quality_natural(viral):
-                return viral[:160]
-        except:
+            pool = CONVERSATION_STARTERS if 'CONVERSATION_STARTERS' in globals() else []
+            if pool:
+                choice = random.choice(pool)
+                if is_high_quality_natural(choice) or len(choice) > 20:
+                    return choice
+        except Exception:
             pass
         return None
 
@@ -13997,6 +13992,23 @@ def classify_intent(message: str) -> dict:
         intent = 'tracking'
         confidence = 0.92
 
+    # Delivery-time questions win over crypto even if USDT is mentioned
+    if re.search(r'(ارسال|تحویل|طول\s*می|چند\s*ساعت|کی\s*میرس)', msg_lower):
+        for city, flag in fast_cities.items():
+            if city in msg_lower:
+                intent = 'shipping_time'
+                confidence = 0.93
+                entities.setdefault('cities', []).append({'name': city, 'flag': flag})
+                break
+
+    if intent == 'unknown':
+        if re.search(r'adhd|بیش.?فعال|تمرکز|نارکولپسی', msg_lower):
+            intent = 'product_search'
+            confidence = 0.82
+        elif re.search(r'کاهش\s*وزن|لاغر|چاقی', msg_lower):
+            intent = 'product_search'
+            confidence = 0.80
+
     return {
         'intent': intent,
         'confidence': confidence,
@@ -14523,7 +14535,7 @@ async def generate_pm_funnel_msg(recent_ctx: str, exchange_count: int = 3, chat_
 
 # ── Strengthened Proactive Natural Engagement (observer) ─────────────────────
 PROACTIVE_ENABLED = True
-PROACTIVE_MAX_PER_GROUP_DAY = 20   # افزایش برای فعالیت بیشتر
+PROACTIVE_MAX_PER_GROUP_DAY = 8
 _proactive_counters: Dict[int, int] = defaultdict(int)
 _proactive_day = date.today()
 
@@ -14619,11 +14631,11 @@ async def group_observer_task():
             me = await client.get_me()
             my_id = me.id if me else 0
 
-            candidates = random.sample(groups, min(10, len(groups)))
+            candidates = random.sample(groups, min(4, len(groups)))
             acted = False
 
-            # Mode 2: ~50% chance — post conversation starter in a random group
-            if random.random() < 0.50:
+            # Mode 2: occasional starter — keep Qwen free for real replies
+            if random.random() < 0.22:
                 starter_candidates = [
                     g for g in candidates
                     if _proactive_counters.get(g, 0) < PROACTIVE_MAX_PER_GROUP_DAY

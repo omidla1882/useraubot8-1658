@@ -62,6 +62,7 @@ class Qwen3Client:
         self.default_temperature = float(os.getenv('QWEN3_TEMPERATURE', '0.44'))
         self.default_num_ctx = int(os.getenv('QWEN3_NUM_CTX', '3072'))
         self._last_health: Tuple[bool, float] = (False, 0.0)
+        self._cooldown_until = 0.0
 
     async def is_available(self) -> bool:
         """Cached health check (30s TTL)."""
@@ -89,12 +90,14 @@ class Qwen3Client:
         temperature: Optional[float] = None,
         use_think: bool = False,
         num_ctx: Optional[int] = None,
-        retries: int = 2,
+        retries: int = 1,
     ) -> Dict:
         """
-        Send chat to Qwen3. Retries on timeout/5xx.
-        use_think=True only for critique paths (very slow on CPU).
+        Send chat to Qwen3. One retry max — extra retries overload CPU 1.7b.
+        After timeout/503, cool down so group fallbacks can answer.
         """
+        if time.time() < self._cooldown_until:
+            raise RuntimeError("Qwen cooldown after recent timeout")
         payload = {
             "model": self.model,
             "messages": messages,
@@ -142,8 +145,11 @@ class Qwen3Client:
             except (asyncio.TimeoutError, aiohttp.ClientError, RuntimeError) as e:
                 last_err = e
                 _log.warning("Qwen attempt %d/%d failed: %s", attempt + 1, retries + 1, e)
+                if 'timeout' in str(e).lower() or '503' in str(e):
+                    self._cooldown_until = time.time() + 20
+                    break
                 if attempt < retries:
-                    await asyncio.sleep(1.5 * (attempt + 1))
+                    await asyncio.sleep(1.2 * (attempt + 1))
 
         raise RuntimeError(f"Qwen3 failed after {retries + 1} attempts: {last_err}")
 

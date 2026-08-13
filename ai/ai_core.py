@@ -761,6 +761,12 @@ def is_weak_llm_output(text: str, language: str = 'fa') -> bool:
         return True
     if t.startswith('فکر کنم') and any(x in t for x in ('چیزی است', 'به منظور', 'به دلیل وجود')):
         return True
+    if (text.count('؟') + text.count('?')) >= 3:
+        return True
+    if any(x in t for x in ('نبادن', 'به من بودن', 'چه جا؟', 'شما نبودید', 'دارو بخورد')):
+        return True
+    if 'چت تلگرام' in t and 'خودمونی' in t:
+        return True
     return False
 
 

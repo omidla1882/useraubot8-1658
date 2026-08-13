@@ -14333,6 +14333,9 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
         ) if k in retrieved.lower() or k in retrieved]
         if _keys and not any(k in llm_result.lower() for k in _keys):
             llm_result = None
+    if llm_result and not retrieved:
+        if any(k in llm_result for k in ('ریتالین', 'اوزمپیک', 'مودافینیل', 'دارو بخور', 'دارو بخورد')):
+            llm_result = None
 
     # Multi-layer selection + final strict gates
     hist = list(group_exchange_history.get(chat_id, []))

@@ -341,6 +341,10 @@ def is_high_quality_natural(text: str) -> bool:
         return False
     if t.lower().count('خودم گرفتم') >= 2 or t.lower().count('آره خودم') >= 2:
         return False
+    if any(x in t for x in ('تخمیر', 'هواپلتر', 'حماست', 'چیزی است که', 'به منظور انجام')):
+        return False
+    if t.startswith('فکر کنم') and any(x in t for x in ('چیزی است', 'به دلیل وجود', 'تو رباتی')):
+        return False
     # Nonsense units (small-model hallucination: "۲ سانتیمتر طول میکشد")
     if _re.search(r'(سانتیمتر|سانتی‌متر|کیلومتر)\s*(طول|زمان)|طول میکشد\s*$', t):
         return False
@@ -14208,8 +14212,9 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
 
     global _last_global_qwen
     too_soon = (time.time() - _last_global_qwen) < MIN_GLOBAL_QWEN_INTERVAL
-    if skip_llm or too_soon:
-        llm_err = "skipped" if skip_llm else "rate_limited"
+    skip_now = skip_llm or too_soon or intent in ('bot_question', 'identity_question')
+    if skip_now:
+        llm_err = "skipped" if (skip_llm or intent in ('bot_question', 'identity_question')) else "rate_limited"
     else:
         try:
             if _qwen3_client is not None:
@@ -14274,6 +14279,19 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
         elif cleaned and len(cleaned) >= 28 and _re.search(r'[آ-ی]', cleaned):
             if not any(b in cleaned for b in ('ربات', 'هوش مصنوعی', 'سانتیمتر', 'You are', 'Assistant:')):
                 llm_result = cleaned
+        try:
+            from ai.ai_core import is_weak_llm_output as _weak
+            if llm_result and _weak(llm_result):
+                llm_result = None
+        except Exception:
+            pass
+        if llm_result and retrieved:
+            _keys = [k for k in (
+                'ریتالین', 'کنسرتا', 'کونسرتا', 'اوزمپیک', 'مودافینیل',
+                'trc20', 'usdt', 'ساعت',
+            ) if k in retrieved.lower() or k in retrieved]
+            if _keys and not any(k in llm_result.lower() for k in _keys):
+                llm_result = None
 
     # Re-prompt only if we got raw text but quality gate rejected it (skip if timeout)
     if (not llm_result) and raw and not llm_err:
@@ -14302,13 +14320,30 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
         except Exception:
             pass
 
+    try:
+        from ai.ai_core import is_weak_llm_output as _weak2
+        if llm_result and _weak2(llm_result):
+            llm_result = None
+    except Exception:
+        pass
+    if llm_result and retrieved:
+        _keys = [k for k in (
+            'ریتالین', 'کنسرتا', 'کونسرتا', 'اوزمپیک', 'مودافینیل',
+            'trc20', 'usdt', 'ساعت',
+        ) if k in retrieved.lower() or k in retrieved]
+        if _keys and not any(k in llm_result.lower() for k in _keys):
+            llm_result = None
+
     # Multi-layer selection + final strict gates
     hist = list(group_exchange_history.get(chat_id, []))
     rep_fn = (_core_is_repeated if (USE_AI_CORE and _core_is_repeated) else is_repeated_response)
 
     result = None
-    # Priority: LLM > enriched local > template (templates feel robotic — last resort)
-    candidates = [c for c in [llm_result, fast_local, template] if c and len(str(c).strip()) > 18]
+    if intent in ('bot_question', 'identity_question'):
+        ordered = [fast_local, llm_result, template]
+    else:
+        ordered = [llm_result, fast_local, template]
+    candidates = [c for c in ordered if c and len(str(c).strip()) > 18]
 
     for cand in candidates:
         c2 = _repair_group_output(_clean_natural(str(cand)))

@@ -627,7 +627,7 @@ class ModelDirector:
     def __init__(self):
         self.variants = {
             'attract_value': "یه نکته کوتاه از تجربه خودت بگو. اگه موضوع دارو یا کریپتو نبود همون موضوع گروه رو ادامه بده. فروش نکن.",
-            'real_answer': "اگه دانش مرتبط داده شده، ازش استفاده کن. وگرنه از دانش عمومی خودت با «فکر کنم» جواب بده. محاوره‌ای و صادق.",
+            'real_answer': "اگه دانش مرتبط داده شده حتماً ازش استفاده کن. محاوره‌ای و مستقیم، مثل چت تلگرام. با فکر کنم شروع نکن.",
             'funnel': "بعد از چند پیام مفید، خیلی نرم بگو جزئیاتش رو پی‌وی راحت‌تر میشه گفت. فشار نده.",
             'general_engage': "مثل یه عضو باهوش گروه حرف بزن. موضوع هر چیه نظر واقعی بده. فروش نکن. ۲-۴ جمله.",
         }
@@ -740,6 +740,8 @@ WEAK_LLM_PATTERNS = [
     r'قطعا|حتما|۱۰۰٪|بدون شک|دقیقا همین',
     r'^(بله|نه|آره|خیر)\s*$', r'^\s*[\.؟!]{1,3}\s*$',
     r'برای سفارش|به سایت|لطفاً به', r'پیام بده به', r'ادمین',
+    r'چیزی است که', r'به منظور', r'تخمیر', r'هواپلتر', r'حماست',
+    r'به دلیل وجود خودمونی', r'^فکر کنم[،,\.]?\s*تو رباتی',
 ]
 
 def is_weak_llm_output(text: str, language: str = 'fa') -> bool:
@@ -756,6 +758,8 @@ def is_weak_llm_output(text: str, language: str = 'fa') -> bool:
     if len(text) < 45 and text.count('.') + text.count('؟') + text.count('!') < 1:
         return True
     if re.search(r'قطعا|حتما|۱۰۰٪|بدون شک|دقیقا همین', t):
+        return True
+    if t.startswith('فکر کنم') and any(x in t for x in ('چیزی است', 'به منظور', 'به دلیل وجود')):
         return True
     return False
 
@@ -788,6 +792,8 @@ def repair_llm_output(text: str, language: str = 'fa') -> str:
     text = re.sub(r'وقت\s*\d+\s*(صبح|شب|ظهر)', '', text)
     text = re.sub(r'ساعت\s*\d+(\s*تا\s*\d+)?\s*(صبح|شب|ظهر|روز)', '', text)
     text = re.sub(r'کلکشن', '', text, flags=re.I)
+    text = re.sub(r'تخمیر|هواپلتر|حماست', '', text)
+    text = re.sub(r'^فکر کنم[،,\.]?\s*', '', text)
     text = re.sub(r'\.\s*است\.', '.', text)
     # Don't spam the same personal claim
     if text.count('خودم گرفتم') > 1:
@@ -903,10 +909,9 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
     # 1. Instant pools for social intents
     _SOCIAL = {
         'greeting': [
-            "سلام، خوبی؟",
-            "سلام. چه خبر؟",
-            "درود، چطوری؟",
-            "سلام بچه‌ها.",
+            "سلام، خوبی؟ چه خبر ازت؟",
+            "سلام. چه خبر، امروز چطوره؟",
+            "درود، چطوری؟ بگو ببینم.",
         ],
         'thanks': [
             "خواهش. هر چیزی بود بگو.",
@@ -923,9 +928,9 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
             "اینجام.",
         ],
         'bot_question': [
-            "نه داداش اینجام. بگو چی شده.",
-            "حرف بزن، گوش میدم.",
-            "آره اینجام. چی شده؟",
+            "نه داداش اینجام. بگو چی شده، گوش میدم.",
+            "حرف بزن، اینجام. چی پیش اومده؟",
+            "آره اینجام. بگو ببینم چی شده.",
         ],
     }
     if intent in _SOCIAL:

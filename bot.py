@@ -627,13 +627,12 @@ def choose_reply_style() -> str:
 
 async def generate_natural_valuable_post(topic_hint: str = "") -> str:
     """AI-first valuable non-spam post (to be used when broadcast enabled)."""
-    probe = topic_hint or "نکته مفید یا اطلاعات کلی در مورد داروهای کمیاب یا سلامت روزمره"
+    probe = topic_hint or "یه سوال یا نظر کوتاه طبیعی برای گپ گروهی، نه تبلیغ"
     ctx = []
     resp = await call_qwen3_natural(ctx, probe)
     if resp and is_high_quality_natural(resp):
         return resp
-    # very safe curated fallback
-    return "بعضی داروهای ADHD و کنترل وزن واقعاً پیدا کردنشون سخته. اگر تجربه یا منبع معتبری دارید خوشحال میشم بدونم."
+    return "راستی این روزا اینترنت خیلی بی‌ثبات شده. شما هم مشکل دارین یا فقط منه؟"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 🤖 تنظیمات هوش مصنوعی گروه (GROUP AI - Qwen3)
@@ -645,16 +644,16 @@ QWEN3_BASE_URL = os.environ.get('QWEN3_BASE_URL', 'http://qwen3.railway.internal
 QWEN3_MODEL = os.environ.get('QWEN3_MODEL', 'qwen3:1.7b')
 
 # محدودیت: حداکثر 1 پاسخ AI در هر گروه در این بازه زمانی (ثانیه) — STRONG anti-spam
-GROUP_AI_COOLDOWN_SECONDS = 90    # حداقل 90 ثانیه بین پاسخ‌های غیر mention
+GROUP_AI_COOLDOWN_SECONDS = 70    # حضور طبیعی‌تر در گروه‌های خود کاربر
 GROUP_AI_TIMEOUT_SECONDS = 95     # زمان بیشتر برای مدل کند CPU (qwen3:1.7b)
 QWEN3_MAX_RETRIES = 1             # یک تلاش اضافه کافی است؛ بیشتر مدل CPU را قفل می‌کند
 _last_global_qwen = 0.0
-MIN_GLOBAL_QWEN_INTERVAL = 12     # حداقل فاصله بین دو فراخوانی مدل (کل گروه‌ها)
+MIN_GLOBAL_QWEN_INTERVAL = 10     # حداقل فاصله بین دو فراخوانی مدل (کل گروه‌ها)
 
 # ═══════════════════════════════════════════════════════════
 # 🛡️ SMART ANTI-SPAM / ANTI-DUPLICATE GUARD
 # ═══════════════════════════════════════════════════════════
-MIN_GROUP_BOT_INTERVAL = 90   # حداقل 90 ثانیه بین هر پیام ربات در یک گروه
+MIN_GROUP_BOT_INTERVAL = 70   # حداقل فاصله بین هر پیام ربات در یک گروه
 last_group_bot_send: Dict[int, float] = {}
 
 # PM anti-duplicate: per-user cooldown (نه فقط یک‌بار اولیه)
@@ -1092,11 +1091,15 @@ class IntelligentGroupEngager:
                 sc += 5
             if any(k in txt for k in ['دارو', 'ریتالین', 'اوزمپیک', 'مودافینیل', 'payment', 'usdt', 'ارسال']):
                 sc += 4
+            if any(k in txt for k in ['فیلم', 'سریال', 'هوا', 'کار', 'خواب', 'vpn', 'دلار',
+                                       'فوتبال', 'سفر', 'ماشین', 'دانشگاه', 'غذا', 'اینترنت',
+                                       'باشگاه', 'شمال', 'فیلترشکن']):
+                sc += 3.5
             if any(k in txt for k in ['کمک', 'تجربه', 'نظرت', 'مشکل', 'سوال']):
                 sc += 3
             if any(k in txt for k in ['من', 'دوست', 'گرفتم']):
                 sc += 2
-            sc += min(len(txt) / 60, 3)
+            sc += min(len(txt) / 50, 3)
             try:
                 if USE_AI_CORE and _strategist:
                     dec = _strategist(txt)
@@ -1107,7 +1110,7 @@ class IntelligentGroupEngager:
 
         candidates.sort(key=score, reverse=True)
         best = candidates[0]
-        if score(best) < 3.0:
+        if score(best) < 1.6:
             return None
         return best
 
@@ -1250,20 +1253,18 @@ class IntelligentGroupEngager:
         return None
 
     async def maybe_funnel(self, gid: int, uid: int, recent_ctx: str) -> Optional[str]:
-        """Soft intelligent PM funnel only after value has been given."""
+        """Soft PM invite after rapport — curated lines, no extra Qwen call."""
         if not self.should_consider_funnel(gid, uid):
             return None
         if not can_send_to_group_safely(gid):
             return None
-        try:
-            hint = f"بعد از چند تبادل مفید، یک جمله خیلی طبیعی و دوستانه پیشنهاد بده که جزئیات رو خصوصی ادامه بدیم. زمینه: {recent_ctx[:200]}"
-            fmsg = await call_qwen3_natural([recent_ctx], hint, chat_id=gid, high_value=True)
-            if fmsg and is_high_quality_natural(fmsg) and len(fmsg) < 180:
-                self.mark_funnel_sent(gid, uid)
-                return fmsg
-        except:
-            pass
-        return None
+        lines = [
+            "اگه خواستی جزئیاتش رو پی‌وی بگو راحت‌تر حرف میزنیم.",
+            "اینجا شلوغه، پی‌وی پیام بده ادامه بدیم.",
+            "جزئیاتش بهتره خصوصی حرف بزنیم، پیام بده.",
+        ]
+        self.mark_funnel_sent(gid, uid)
+        return random.choice(lines)
 
 # Global engager instance
 group_engager = IntelligentGroupEngager()
@@ -13435,9 +13436,9 @@ TEMPLATE_RESPONSES: Dict[str, list] = {
         "هستم، بگو ببینم چی شده.",
     ],
     'greeting': [
-        "سلام، چطوری؟ بگو ببینم چی میخوای.",
-        "درود! چطور میتونم کمک کنم؟",
-        "سلام خوبی؟ جزئیات رو بگو.",
+        "سلام، خوبی؟",
+        "سلام. چه خبر؟",
+        "درود، چطوری؟",
     ],
     'thanks': [
         "خواهش میکنم. هر وقت لازم شد بگو.",
@@ -13645,7 +13646,14 @@ class ProfessionalGroupResponder:
 responder = None
 
 def retrieve_knowledge(query: str, intent: str = "") -> str:
-    """Improved retriever (keyword + drug alias + intent + topic matching)."""
+    """Improved retriever (keyword + drug alias + intent + topic matching).
+    Empty for general chat so VPN/life questions are not answered with drugs."""
+    try:
+        from ai.ai_core import is_domain_topic as _idt
+        if not _idt(query, intent):
+            return ""
+    except Exception:
+        pass
     q = _expand_drug_query((query or "") + " " + (intent or "")).lower()
     hits = []
 
@@ -13798,14 +13806,16 @@ _AI_TRIGGER_COMPILED = re.compile(
     r'قیمت|چنده|موجود|دارید|میخوام|میخوم|نمیدونم|کمک|راهنما|راهنمایی|'
     r'اعتماد|مطمئن|معتبر|کیفیت|تجربه|کسی|بلد|میدونه|میدونین|نظر|پیشنهاد|'
     r'بهتره|بدتره|ارزونتره|گرونه|چند|هست|دارین|'
-    # General conversation triggers (broader engagement)
     r'راستی|یه سوال|یه چیزی|به نظرت|فکر میکنی|کسی میدونه|'
     r'تجربه داری|تست کردی|امتحان کردی|استفاده کردی|'
     r'مشکل دارم|مشکلم اینه|نگرانم|خسته شدم|کمکم کن|'
     r'چی فکر میکنی|نظرت چیه|پیشنهادت چیه|بگو ببینم|'
     r'همتون|دوستان|بچه‌ها|داداش|خواهر|'
     r'جالبه|مطمئنی|جدی|واقعاً|یعنی|باورم نمیشه|'
-    r'کمکی|میتونی|میتونم|میشه کمک|ممنون میشم',
+    r'کمکی|میتونی|میتونم|میشه کمک|ممنون میشم|'
+    r'فیلم|سریال|هوا|ترافیک|خواب|باشگاه|فوتبال|ماشین|دانشگاه|'
+    r'vpn|فیلترشکن|اینترنت|وای.?فای|دلار|طلا|غذا|رستوران|'
+    r'شمال|مسافرت|سفر|ورزش|آیفون|اندروید|کار از خونه|دورکار',
     re.IGNORECASE
 )
 
@@ -13815,11 +13825,11 @@ _AI_TRIGGER_MIN_LEN = 6
 def _message_triggers_ai(text: str) -> bool:
     if not text or len(text) < _AI_TRIGGER_MIN_LEN:
         return False
-    # Always engage with questions
     if '?' in text or '؟' in text:
         return True
-    # Broader for human-like activity in own groups
-    if random.random() < 0.18:  # 18% chance to engage even on softer signals (human randomness)
+    if len(text) >= 35 and random.random() < 0.32:
+        return True
+    if random.random() < 0.22:
         return True
     return bool(_AI_TRIGGER_COMPILED.search(text))
 
@@ -13964,15 +13974,16 @@ def classify_intent(message: str) -> dict:
         if intent != 'unknown':
             break
 
-    # Shipping cities (from ref)
+    # City names alone are life/travel chat, not shipping.
     fast_cities = {'تهران': '🇮🇷', 'استانبول': '🇹🇷', 'دبی': '🇦🇪', 'بغداد': '🇮🇶', 'تورنتو': '🇨🇦'}
-    for city, flag in fast_cities.items():
-        if city in msg_lower:
-            if intent in ('unknown', 'shipping_time'):
-                intent = 'shipping_time'
-                entities.setdefault('cities', []).append({'name': city, 'flag': flag})
-                confidence = max(confidence, 0.85)
-            break
+    if re.search(r'(ارسال|تحویل|سفارش|بسته|طول\s*می|چند\s*ساعت)', msg_lower):
+        for city, flag in fast_cities.items():
+            if city in msg_lower:
+                if intent in ('unknown', 'shipping_time'):
+                    intent = 'shipping_time'
+                    entities.setdefault('cities', []).append({'name': city, 'flag': flag})
+                    confidence = max(confidence, 0.85)
+                break
 
     # help_request + buy context
     if intent == 'help_request' and re.search(r'(خرید|سفارش|پرداخت|دارو)', msg_lower):
@@ -14120,15 +14131,24 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     intent = intent_info.get('intent', 'unknown')
 
     retrieved = ""
+    domain = False
     try:
-        if USE_AI_CORE and _core_compose:
-            retrieved = _core_compose(user_text, intent) or ""
-        if not retrieved:
-            retrieved = retrieve_knowledge(user_text, intent) or ""
+        from ai.ai_core import is_domain_topic as _idt
+        domain = _idt(user_text, intent)
     except Exception:
-        retrieved = retrieve_knowledge(user_text, intent) or ""
+        domain = False
+    try:
+        if domain:
+            if USE_AI_CORE and _core_compose:
+                retrieved = _core_compose(user_text, intent) or ""
+            if not retrieved:
+                retrieved = retrieve_knowledge(user_text, intent) or ""
+    except Exception:
+        retrieved = retrieve_knowledge(user_text, intent) or "" if domain else ""
 
-    template = _get_template_response(intent, user_text) if '_get_template_response' in globals() else None
+    template = None
+    if domain:
+        template = _get_template_response(intent, user_text) if '_get_template_response' in globals() else None
 
     fast_local = None
     try:
@@ -14147,9 +14167,9 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     except Exception:
         director_cfg = {'temperature': 0.45, 'max_tokens': 320, 'system_addon': ''}
 
-    temp = director_cfg.get('temperature', 0.44)
-    max_tokens = director_cfg.get('max_tokens', 260)
-    num_ctx = 3072
+    temp = director_cfg.get('temperature', 0.52)
+    max_tokens = director_cfg.get('max_tokens', 280)
+    num_ctx = int(os.environ.get('QWEN3_NUM_CTX', '4096'))
     dir_addon = director_cfg.get('system_addon', '')
 
     # Few shots for grounding
@@ -14354,25 +14374,27 @@ def _intent_fallback(intent: str, user_text: str) -> str:
     """Diverse, intent-aware fallback. Pulls from TEMPLATE_RESPONSES first, then general pool."""
     # Try template pool for this intent
     pool = TEMPLATE_RESPONSES.get(intent)
-    if not pool:
-        # Try drug detection
+    domain = False
+    try:
+        from ai.ai_core import is_domain_topic as _idt
+        domain = _idt(user_text or '', intent)
+    except Exception:
+        domain = False
+    if not pool and domain:
         for pattern, key in _DRUG_TEMPLATE_MAP:
             if pattern.search(user_text or ''):
                 pool = TEMPLATE_RESPONSES.get(key)
                 break
-    if pool:
+    if pool and (domain or intent in ('greeting', 'thanks', 'goodbye', 'presence_check', 'bot_question')):
         return random.choice(pool)
 
     # Generic diverse pool — strong complete natural lines
     general_pool = [
-        "بگو ببینم چی دنبالشی دقیق‌تر؟ تجربه‌ای دارم.",
-        "جزئیات بیشتری بده تا بهتر راهنمایی کنم. معمولاً بستگه داره.",
+        "جالبه. بیشتر بگو ببینم از کجا شروع شده.",
+        "راستش بستگه به شرایط. تو خودت چی فکر میکنی؟",
+        "منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟",
+        "اوکی فهمیدم. نظرت خودت چیه؟",
         "آره این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.",
-        "سوالت رو کامل‌تر بگو، راهنماییت میکنم. چه شهری هستی؟",
-        "تجربه واقعی دارم تو این زمینه. دقیق بگو چی میخوای بدونم کمک کنم.",
-        "چه شهری هستی؟ بستگه داره و زمانش فرق میکنه.",
-        "کمک میکنم. ولی بیشتر توضیح بده تا دقیق‌تر بگم.",
-        "این موضوع رو میدونم. بگو دقیق چی لازم داری؟",
     ]
     return random.choice(general_pool)
 
@@ -14545,42 +14567,33 @@ async def generate_pm_funnel_msg(recent_ctx: str, exchange_count: int = 3, chat_
 
 # ── Strengthened Proactive Natural Engagement (observer) ─────────────────────
 PROACTIVE_ENABLED = True
-PROACTIVE_MAX_PER_GROUP_DAY = 8
+PROACTIVE_MAX_PER_GROUP_DAY = 10
 _proactive_counters: Dict[int, int] = defaultdict(int)
 _proactive_day = date.today()
 
 # Natural conversation starters — posted proactively to initiate conversations
 # Mix of pharma, crypto, migration, and general topics to seem human
 CONVERSATION_STARTERS = [
-    # Pharma — natural peer questions
+    "راستی یه سوال، VPN چی استفاده میکنید این روزا؟",
+    "اینترنت امروز خیلی افتضاحه. مال شما هم همینه؟",
+    "کسی فیلم یا سریال خوبی دیده اخیرا که ارزش وقت گذاشتن داشته باشه؟",
+    "کار از خونه بهتره یا دفتر؟ من که تمرکزم تو خونه بهتره.",
+    "خوابتون منظمه این روزا یا مثل من بهم ریخته؟",
+    "کسی شمال رفته اخیرا؟ جاده آخر هفته چطوره؟",
+    "دلار اینقدر نوسان داره که آدم گیج میشه. شما هم دنبال خبرین؟",
+    "باشگاه میرید این روزا یا ول کردین؟",
+    "هوای شهرتون چطوره امروز؟ تهران که گرفته‌ست.",
+    "سلام بچه‌ها. امروز گروه آرومه، چه خبر؟",
+    "کسی تجربه زندگی در استانبول داره؟ هزینه زندگی چطوره؟",
+    "مهاجرت ترکیه هنوز ارزش داره یا خیلی گرون شده؟",
+    "نوبیتکس یا والکس — کدومو ترجیح میدید؟",
     "داروهای ADHD این روزا خیلی کمیابن. کسی تجربه داره از کجا بگیره؟",
     "شنیدم اوزمپیک تو ایران اصلی پیدا نمیشه. شما هم این مشکل داشتین؟",
-    "یه دوست داره مودافینیل میخواد برای کار، کسی راهنمایی میکنه؟",
-    "ریتالین اورجینال اروپایی تجربه دارین؟ با ایرانی فرق داره؟",
-    "برای دارو از خارج کدوم روش به نظرتون امن‌تره؟",
-    "مونجارو برای کاهش وزن تجربه داره کسی اینجا؟",
-    "انسولین خارجی با ایرانی از نظر کیفیت فرق میکنه؟",
-    # Crypto payment
-    "TRC20 کارمزد خیلی کمیه برای ارسال تتر. کسی تجربه داره؟",
-    "نوبیتکس یا والکس — کدومو ترجیح میدید؟",
-    "USDT یا BNB، کدوم برای انتقال به خارج راحت‌تره؟",
-    "صرافی‌های ایرانی این روزا محدودیت دارن؟ تجربه دارین؟",
-    # Migration
-    "مهاجرت ترکیه هنوز ارزش داره یا خیلی گرون شده؟",
-    "دبی برای اقامت چطوره؟ هزینه‌ها خیلی بالاست؟",
-    "اکسپرس اینتری کانادا الان چقدر انتظار داره؟",
-    "کسی تجربه زندگی در استانبول داره؟ هزینه زندگی چطوره؟",
-    # General engaging
-    "به نظرتون بهترین روش ارسال پول به خارج الان چیه؟",
-    "کسی تجربه خرید از سایت‌های اروپایی داره — گمرک مشکل نمیشه؟",
-    "سلام بچه‌ها. کسی اینجا تهرانه یا بیشتر خارجه؟",
-    "راستی یه سوال، VPN چی استفاده میکنید این روزا؟",
-    "بهترین روش انتقال ارز به ترکیه الان چیه به نظرتون؟",
 ]
 
 # Track last starter time per group to avoid posting too often
 _last_starter_time: Dict[int, float] = {}
-_starter_min_interval = 900  # حداقل 15 دقیقه بین starters per group
+_starter_min_interval = 720  # حداقل 12 دقیقه بین starters per group
 
 async def _post_conversation_starter(gid: int) -> bool:
     """CENTRALIZED: Use engager.generate_starter for fully intelligent dynamic starters."""
@@ -14641,11 +14654,11 @@ async def group_observer_task():
             me = await client.get_me()
             my_id = me.id if me else 0
 
-            candidates = random.sample(groups, min(4, len(groups)))
+            candidates = random.sample(groups, min(5, len(groups)))
             acted = False
 
-            # Mode 2: occasional starter — keep Qwen free for real replies
-            if random.random() < 0.22:
+            # Mode 2: occasional starter — curated lines, no extra Qwen call
+            if random.random() < 0.26:
                 starter_candidates = [
                     g for g in candidates
                     if _proactive_counters.get(g, 0) < PROACTIVE_MAX_PER_GROUP_DAY
@@ -14697,6 +14710,10 @@ async def group_observer_task():
                                 score += 5
                             if any(kw in txt for kw in ['دارو', 'ریتالین', 'اوزمپیک', 'مودافینیل', 'انسولین', 'ترامادول', 'کونسرتا']):
                                 score += 4
+                            if any(kw in txt for kw in ['فیلم', 'سریال', 'هوا', 'کار', 'خواب', 'vpn', 'دلار',
+                                                         'فوتبال', 'سفر', 'ماشین', 'دانشگاه', 'غذا', 'اینترنت',
+                                                         'باشگاه', 'شمال', 'فیلترشکن']):
+                                score += 3.5
                             if any(kw in txt for kw in ['کریپتو', 'usdt', 'پرداخت', 'ارسال', 'خرید', 'سفارش']):
                                 score += 3
                             if any(kw in txt for kw in ['مهاجرت', 'ترکیه', 'دبی', 'کانادا', 'ویزا', 'اقامت']):
@@ -14719,7 +14736,7 @@ async def group_observer_task():
 
                         candidate_msgs.sort(key=_msg_score, reverse=True)
                         target_msg = candidate_msgs[0]
-                        if _msg_score(target_msg) < 2.5:  # includes crypto (3.0) + migration (2.5) messages
+                        if _msg_score(target_msg) < 1.5:
                             continue
 
                         # Phase 2: Use IntelligentGroupEngager for selection + generation
@@ -14743,7 +14760,7 @@ async def group_observer_task():
                             enriched_ctx = f"Recent bot messages in group:\n{recent_bot}\n\n" + enriched_ctx
 
                         # Use engager to generate (it will further enrich with per-user history)
-                        resp = await group_engager.generate_valuable_reply(gid, target_msg, enriched_ctx, use_llm=False)
+                        resp = await group_engager.generate_valuable_reply(gid, target_msg, enriched_ctx, use_llm=True)
 
                         if resp and is_high_quality_natural(resp) and len(resp) > 10 and not _is_repetitive_or_similar(gid, resp):
                             # Human randomness: گاهی skip برای طبیعی‌تر بودن

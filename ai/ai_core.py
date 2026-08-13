@@ -187,6 +187,37 @@ KNOWN_PRODUCT_WORDS = re.compile(
     re.I,
 )
 
+# Only inject pharma/crypto knowledge when the message is actually about those topics.
+# City names alone (استانبول زندگی) must NOT pull shipping snippets.
+_DOMAIN_TOPIC_RE = re.compile(
+    r'ریتالین|ritalin|اوزمپیک|ozempic|مونجارو|mounjaro|مودافینیل|modafinil|'
+    r'انسولین|insulin|ترامادول|tramadol|کونسرتا|کنسرتا|concerta|سماگلوتاید|'
+    r'\busdt\b|trc20|تتر|ترون|\bbtc\b|اتریوم|نوبیتکس|والکس|کریپتو|ارز\s*دیجیتال|'
+    r'adhd|بیش.?فعال|نارکولپسی|'
+    r'(ارسال|تحویل|بسته).{0,20}(ساعت|شهر|استانبول|تهران|دبی|تورنتو)|'
+    r'(پرداخت|واریز).{0,16}(تتر|usdt|کریپتو|ترون)|'
+    r'سفارش\s*(بدم|بدم|کنم|ثبت)|گمرک',
+    re.I,
+)
+
+_DOMAIN_INTENTS = frozenset({
+    'product_search', 'shipping_time', 'crypto_info', 'payment_crypto_help',
+    'stock_check', 'faq_order_process', 'trust_question', 'product_info',
+    'tracking', 'payment_confirmation', 'faq_prescription', 'supplement_search',
+    'price_only',
+})
+
+
+def is_domain_topic(text: str, intent: str = "") -> bool:
+    """True only when the message is actually about drugs/crypto/shipping."""
+    if intent and intent in _DOMAIN_INTENTS:
+        # shipping_time from a city name alone is a false positive — require domain words
+        if intent == 'shipping_time' and not _DOMAIN_TOPIC_RE.search(text or ''):
+            if not re.search(r'(ارسال|تحویل|سفارش|بسته|طول\s*می|چند\s*ساعت)', text or '', re.I):
+                return False
+        return True
+    return bool(_DOMAIN_TOPIC_RE.search(text or ''))
+
 
 def _detect_language(text: str) -> str:
     if re.search(r'[\u0600-\u06FF]', text or ''):
@@ -210,14 +241,8 @@ def classify_intent(message: str) -> Dict:
         if intent != 'unknown':
             break
 
-    # City boost
-    if intent in ('unknown', 'shipping_time'):
-        for city, flag in SHIPPING_CITIES['fast'].items():
-            if city in msg_lower:
-                intent = 'shipping_time'
-                entities.setdefault('cities', []).append({'name': city, 'flag': flag})
-                confidence = max(confidence, 0.85)
-                break
+    # City names alone are life/travel chat, not shipping.
+    # Only treat as shipping when delivery words are also present.
 
     if intent == 'help_request' and re.search(r'(خرید|سفارش|پرداخت|دارو)', msg_lower):
         intent = 'faq_order_process'
@@ -246,12 +271,15 @@ def classify_intent(message: str) -> Dict:
                 entities.setdefault('cities', []).append({'name': city, 'flag': SHIPPING_CITIES['fast'][city]})
                 break
 
-    # ADHD / focus / weight without a brand name
+    # ADHD / focus / weight without a brand name — require medical context for "تمرکز"
     if intent == 'unknown':
-        if re.search(r'adhd|بیش.?فعال|تمرکز|نارکولپسی', msg_lower):
+        if re.search(r'adhd|بیش.?فعال|نارکولپسی', msg_lower):
             intent = 'product_search'
             confidence = 0.82
-        elif re.search(r'کاهش\s*وزن|لاغر|چاقی', msg_lower):
+        elif re.search(r'تمرکز', msg_lower) and re.search(r'(دارو|قرص|ریتالین|مودافینیل|adhd)', msg_lower):
+            intent = 'product_search'
+            confidence = 0.80
+        elif re.search(r'کاهش\s*وزن|لاغر|چاقی', msg_lower) and re.search(r'(دارو|اوزمپیک|مونجارو|قرص)', msg_lower):
             intent = 'product_search'
             confidence = 0.80
 
@@ -500,7 +528,10 @@ _RETRIEVE_STOP = frozenset({
 })
 
 def retrieve_knowledge(query: str, intent: str = "") -> str:
-    """Stronger retrieval (scoring + topic + drug + intent map). Ignores stopwords."""
+    """Stronger retrieval (scoring + topic + drug + intent map). Ignores stopwords.
+    Returns empty for general chat so Qwen is not forced into a drug/crypto script."""
+    if not is_domain_topic(query, intent):
+        return ""
     q = ((query or "") + " " + (intent or "")).lower()
     hits = []
     for key, txt in KNOWLEDGE_SNIPPETS:
@@ -595,10 +626,10 @@ class ModelDirector:
     """
     def __init__(self):
         self.variants = {
-            'attract_value': "تو یه عضو واقعی گروهی هستی که تجربه داره. یه نکته کوتاه مفید و واقعی از دانشت (ارسال، پرداخت، کیفیت) طبیعی بگو. مثل دوست حرف بزن، نه فروشنده. آخرش یه سوال سبک و دوستانه بپرس تا گفتگو ادامه پیدا کنه.",
-            'real_answer': "فقط از دانش و زمینه داده شده استفاده کن. جواب واقعی، دقیق و صادقانه بده. اگر مطمئن نیستی بگو. فقط به صورت محاوره‌ای طبیعی فارسی مثل یه دوست باتجربه حرف بزن. جملات کامل باشن.",
-            'funnel': "بعد از دادن ارزش واقعی، خیلی طبیعی و ملایم پیشنهاد کن جزئیات رو خصوصی ادامه بدیم اگر کاربر علاقه نشون داد. فشار نیار، مثل حرف دوست باشه.",
-            'general_engage': "کنجکاو، relatable و صمیمی باش. رابطه بساز. گاهی یه insight واقعی مرتبط بگو. جواب ۳-۶ خط کامل محاوره‌ای با فعل و نقطه. مثل انسان واقعی در گروه چت کن.",
+            'attract_value': "یه نکته کوتاه از تجربه خودت بگو. اگه موضوع دارو یا کریپتو نبود همون موضوع گروه رو ادامه بده. فروش نکن.",
+            'real_answer': "اگه دانش مرتبط داده شده، ازش استفاده کن. وگرنه از دانش عمومی خودت با «فکر کنم» جواب بده. محاوره‌ای و صادق.",
+            'funnel': "بعد از چند پیام مفید، خیلی نرم بگو جزئیاتش رو پی‌وی راحت‌تر میشه گفت. فشار نده.",
+            'general_engage': "مثل یه عضو باهوش گروه حرف بزن. موضوع هر چیه نظر واقعی بده. فروش نکن. ۲-۴ جمله.",
         }
 
     def decide_variant(self, intent: str, user_text: str, high_value: bool = False) -> dict:
@@ -610,20 +641,21 @@ class ModelDirector:
     def direct(self, intent: str, plan: dict, user_text: str, has_knowledge: bool, has_history: bool) -> dict:
         """Return directed config optimized for qwen3:1.7b on CPU."""
         use_think = False  # think mode too slow on 1.7b CPU — disabled by default
-        temp = 0.40 if intent in ('faq_order_process', 'shipping_time', 'tracking', 'payment_crypto_help') else 0.46
+        factual = intent in ('faq_order_process', 'shipping_time', 'tracking', 'payment_crypto_help', 'crypto_info')
+        temp = 0.38 if (factual and has_knowledge) else 0.52
 
         variant = 'general_engage'
-        if intent in ('payment_crypto_help', 'crypto_info', 'shipping_time', 'tracking', 'faq_order_process') and has_knowledge:
+        if factual and has_knowledge:
             variant = 'real_answer'
-        elif intent in ('greeting', 'thanks', 'presence_check', 'goodbye'):
+        elif intent in ('greeting', 'thanks', 'presence_check', 'goodbye', 'unknown'):
             variant = 'general_engage'
-        elif has_knowledge and random.random() < 0.25:
+        elif has_knowledge and random.random() < 0.20:
             variant = 'attract_value'
-        if has_history and random.random() < 0.30:
+        if has_history and has_knowledge and random.random() < 0.28:
             variant = 'funnel'
 
         addon = self.variants.get(variant, self.variants['general_engage'])
-        max_t = 240 if has_knowledge or has_history else 200
+        max_t = 300 if has_knowledge or has_history else 260
 
         completeness = " ۲-۴ جمله کامل محاوره‌ای. مثل آدم واقعی."
         addon = addon + completeness
@@ -696,7 +728,7 @@ def compose_knowledge(query: str, intent: str = "") -> str:
     return compose_knowledge_for_prompt(query, intent) or retrieve_knowledge(query, intent)
 
 # expose new
-__all__ = ['classify_intent', 'retrieve_knowledge', 'compose_knowledge_for_prompt', 'compose_knowledge_response', 'plan_response', 'is_repeated_response', 'get_drug_context_snippet', 'match_drug_family', 'get_family_info', 'decide_engagement', 'ModelDirector', 'ContentIntelligence', 'is_weak_llm_output', 'get_few_shots_for_prompt', 'repair_llm_output', 'pick_best_or_fallback']
+__all__ = ['classify_intent', 'retrieve_knowledge', 'compose_knowledge_for_prompt', 'compose_knowledge_response', 'plan_response', 'is_repeated_response', 'get_drug_context_snippet', 'match_drug_family', 'get_family_info', 'decide_engagement', 'ModelDirector', 'ContentIntelligence', 'is_weak_llm_output', 'get_few_shots_for_prompt', 'repair_llm_output', 'pick_best_or_fallback', 'is_domain_topic']
 
 
 # ── Lightweight Conversation Strategist (Phase 2) ─────────────────────────────
@@ -756,6 +788,7 @@ def repair_llm_output(text: str, language: str = 'fa') -> str:
     text = re.sub(r'وقت\s*\d+\s*(صبح|شب|ظهر)', '', text)
     text = re.sub(r'ساعت\s*\d+(\s*تا\s*\d+)?\s*(صبح|شب|ظهر|روز)', '', text)
     text = re.sub(r'کلکشن', '', text, flags=re.I)
+    text = re.sub(r'\.\s*است\.', '.', text)
     # Don't spam the same personal claim
     if text.count('خودم گرفتم') > 1:
         first = text.find('خودم گرفتم')
@@ -786,37 +819,56 @@ def pick_best_or_fallback(llm_text: str, local_text: str, intent: str = "") -> s
     # last resort — short safe line
     return "جزئیات بیشتری بده تا دقیق‌تر راهنمایی کنم."
 
-# Few-shot bank for Qwen3 — high-quality natural Persian examples
+# Few-shot bank — general group chat first, domain examples only when relevant
 FEW_SHOT_BANK = [
-    ("سلام، ریتالین موجوده؟", "آره ریتالین و کنسرتا موجوده، اورجینال اروپایی. TRC20 راحت‌تره برا پرداخت. تو کدوم شهر هستی؟"),
+    ("VPN چی استفاده میکنید؟", "من وایرفگارد رو با کلش قاطی میکنم. وایرفگارد پایدارتره، کلش برای روزمره راحت‌تره. تو چی داری؟"),
+    ("هوای تهران امروز چطوره؟", "مثل همیشه شلوغ و یه کم گرفته. اگه میتونی عصر برو بیرون بهتره. تو کدوم منطقه‌ای؟"),
+    ("فیلم خوبی دیدی اخیرا؟", "یه سریال شروع کردم ولی نصفه رها کردم. تو چی دیدی که ارزش وقت گذاشتن داشته باشه؟"),
+    ("کسی استانبول زندگی کرده؟", "چند بار رفتم. محله خیلی فرق میکنه؛ بشیکتاش گرون‌تره، کادیکوی آروم‌تر. هدفت کاره یا زندگی؟"),
+    ("دلار امروز چطوره به نظرتون؟", "نوسان زیاده، کسی دقیق نمیدونه. من کوتاه‌مدت حدس نمیزنم. تو دنبال خریدی یا فقط خبر؟"),
+    ("خوابم بهم ریخته، کسی راهی داره؟", "کافئین عصر رو قطع کن، نور گوشی قبل خواب کم کن. خودم با همین دو تا بهتر شدم. شیفت کاری داری؟"),
+    ("باشگاه میرید این روزا؟", "هفته‌ای سه بار میرم ولی نظمم ضعیفه. تو قدرته یا هوازی؟"),
+    ("اینترنت امروز افتضاحه", "آره منم کند شده. فیلترشکن عوض کردم یه کم بهتر شد. مال تو کدوم اپراتوره؟"),
+    ("کسی شمال رفته اخیرا؟", "جاده شلوغه آخر هفته. وسط هفته بهتره. کجا می‌خوای بری؟"),
+    ("تو رباتی؟", "نه داداش، اینجام. بگو چی شده."),
+    ("سلام بچه‌ها", "سلام. چه خبر، امروز گروه آرومه."),
+    ("نظرتون چیه کار از خونه بهتره؟", "برای تمرکز خوبه ولی آدم تنبل میشه. من ترکیبی بهتر نتیجه گرفتم. تو چیکار میکنی؟"),
     ("ارسال به استانبول چقدر طول میکشه؟", "معمولاً ۴-۸ ساعت بعد تأیید پرداخت. بسته محرمانه میاد. من خودم چند بار گرفتم، سریع بود."),
     ("چطور با تتر پرداخت کنم؟", "TRC20 رو انتخاب کن، کارمزدش پایینه. آدرس رو دقیق کپی کن. بعد از واریز ۵-۱۵ دقیقه تأیید میشه."),
+    ("سلام، ریتالین موجوده؟", "آره ریتالین و کنسرتا موجوده، اورجینال اروپایی. TRC20 راحت‌تره برا پرداخت. تو کدوم شهر هستی؟"),
     ("اوزمپیک دارید؟", "آره موجوده. اورجینال نووو نوردیسک. برای کاهش وزن و دیابت نوع ۲. قیمتشو بخوای پیام بده."),
     ("کریپتو چطور؟ کدوم بهتره؟", "USDT روی TRC20 بهترینه — کارمزد پایین، سریع تأیید میشه. BNB هم خوبه. اتریوم گرونه."),
     ("مودافینیل چیه؟", "داروی بیداری و تمرکزه. خودم استفاده کردم، فرق محسوسی داشت. پیدا کردنش یکم سخته ولی میشه."),
     ("بسته گمرک نمیشه؟", "بسته محرمانه ارسال میشه. من تو استانبول و دبی گرفتم، مشکلی نداشتم اصلاً."),
-    ("از کجا بگیرم مطمئن باشم؟", "از سایت‌های معتبر اروپایی. هولوگرام داره، batch number قابل چک. اگه خواستی راهنماییت میکنم."),
     ("مهاجرت ترکیه الان چطوره؟", "هنوز گزینه‌ست ولی هزینه‌ها رفته بالا. استانبول گرونه. آنکارا یا ازمیر ارزون‌تره. چه هدفی داری؟"),
     ("نوبیتکس یا والکس؟", "هر دو خوبن. نوبیتکس حجم بیشتری داره. والکس رابط کاربریش راحت‌تره. برای چه مقداری میخوای؟"),
     ("ریتالین ایرانی با اروپایی فرق داره؟", "بله، داره. اروپایی کیفیت ثابت‌تری داره، هولوگرام و کد batch داره قابل چک. ایرانیش نوسان کیفیت داره."),
     ("ADHD دارم چی بگیرم؟", "ریتالین یا کونسرتا معمولاً اول تجویز میشه. دوز رو باید دکتر بده. برای تهیه هم میشه راهنماییت کرد."),
-    ("کاهش وزن چی بزنم؟", "اوزمپیک (سماگلوتاید) و مونجارو (تیرزپاتید) الان خیلی رایجن. ولی باید با دکتر هماهنگ باشی."),
     ("ارسال به دبی چقدر طول میکشه؟", "دبی هم سریعه معمولاً، ۶-۱۲ ساعت بعد تأیید. بسته کاملاً محرمانه میاد."),
     ("چطور میتونم TRC20 بخرم؟", "از نوبیتکس یا والکس USDT بخر، بعد روی آدرس TRC20 که بهت داده میشه انتقال بده. ساده‌ست."),
-    ("سلام بچه‌ها", "سلام. کسی اینجا تجربه خرید از خارج داره؟"),
     ("برای تمرکز چی خوبه؟", "مودافینیل یا ریتالین بسته به شرایط. من مودافینیل رو برای کار طولانی تست کردم خوبه."),
     ("پرداخت با کریپتو امن هست؟", "بله اگر شبکه درست انتخاب کنی. TRC20 کم ریسک‌تره و سریع. خودم چند بار زدم مشکلی نبود."),
 ]
 
 def get_few_shots_for_prompt(query: str, k: int = 3) -> str:
     q = (query or "").lower()
+    domain = is_domain_topic(query)
     scored = []
     for ex_q, ex_a in FEW_SHOT_BANK:
+        if not domain and is_domain_topic(ex_q):
+            continue
         sc = sum(1 for w in q.split() if w and len(w) > 1 and w in ex_q.lower())
         if sc:
             scored.append((sc, f"کاربر: «{ex_q}»\nپاسخ طبیعی: «{ex_a}»"))
     scored.sort(reverse=True)
-    return "\n".join([s[1] for s in scored[:k]]) if scored else ""
+    if scored:
+        return "\n".join([s[1] for s in scored[:k]])
+    if not domain:
+        generals = [(eq, ea) for eq, ea in FEW_SHOT_BANK if not is_domain_topic(eq)]
+        if generals:
+            ex_q, ex_a = random.choice(generals)
+            return f"کاربر: «{ex_q}»\nپاسخ طبیعی: «{ex_a}»"
+    return ""
 
 def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: str = "", style: str = "general_engage") -> str:
     """High-quality local reply when Qwen is slow/unavailable. Never raw knowledge paste."""
@@ -851,29 +903,29 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
     # 1. Instant pools for social intents
     _SOCIAL = {
         'greeting': [
-            "سلام! بگو ببینم چی میخوای.",
-            "سلام، چطوری؟ در خدمتم.",
-            "درود! چطور کمکت کنم؟",
-            "هی سلام. بگو چی لازم داری.",
+            "سلام، خوبی؟",
+            "سلام. چه خبر؟",
+            "درود، چطوری؟",
+            "سلام بچه‌ها.",
         ],
         'thanks': [
-            "خواهش. هر چیزی لازم داشتی بگو.",
-            "خواهش میکنم. موفق باشی.",
-            "راحت باش.",
+            "خواهش. هر چیزی بود بگو.",
+            "خواهش میکنم.",
+            "قابلی نداره.",
         ],
         'goodbye': [
+            "فعلاً، مواظب خودت باش.",
             "خداحافظ.",
-            "مراقب باش. هر وقت لازم شد برگرد.",
-            "فعلاً.",
+            "باشه بعداً حرف میزنیم.",
         ],
         'presence_check': [
             "آره هستم. بگو.",
             "اینجام.",
         ],
         'bot_question': [
-            "آره اینجام. بگو چی شده.",
-            "بگو ببینم چی میخوای، شاید بتونم کمک کنم.",
+            "نه داداش اینجام. بگو چی شده.",
             "حرف بزن، گوش میدم.",
+            "آره اینجام. چی شده؟",
         ],
     }
     if intent in _SOCIAL:
@@ -889,9 +941,9 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
     if matches:
         matches.sort(reverse=True)
         top_score, top_answer = matches[0]
-        if top_score >= 2:
+        if top_score >= 2 and (is_domain_topic(user_text) or not is_domain_topic(top_answer)):
             return top_answer
-        if top_score >= 1 and intent not in ('unknown', 'clarification', 'help_request', 'complaint'):
+        if top_score >= 1 and intent not in ('unknown', 'clarification', 'help_request', 'complaint') and is_domain_topic(user_text):
             return top_answer
 
     # 3. Intent-specific fallback pools (grounded, varied, natural)
@@ -935,39 +987,48 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
             "بستگه داره. بگو چی میخوای راهنماییت کنم.",
         ],
         'unknown': [
-            "بگو ببینم چی لازم داری.",
-            "جزئیات بیشتری بده تا کمکت کنم.",
-            "آره، بگو دقیق‌تر.",
-            "چی میخوای؟ بگو.",
+            "جالبه. بیشتر بگو ببینم از کجا شروع شده.",
+            "راستش بستگه به شرایط. تو خودت چی فکر میکنی؟",
+            "منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟",
+            "اوکی فهمیدم. نظرت خودت چیه؟",
         ],
     }
     pool = _INTENT_POOL.get(intent, _INTENT_POOL['unknown'])
     return random.choice(pool)
 
 def decide_engagement(user_text: str, recent_ctx: str = "", group_notes: str = "") -> dict:
-    """Return decision for smart random engagement + style. Stronger for natural PM funnel + intelligent interactions."""
-    txt = (user_text or "").lower()
+    """Engage on any real group conversation, not only drugs/crypto."""
+    txt = (user_text or "").lower().strip()
     score = 0.0
     style = "general_engage"
 
-    if any(q in txt for q in ['؟', '?', 'چطور', 'چگونه', 'چقدر', 'کجا', 'کی']):
-        score += 3.5
-    if any(k in txt for k in ['نمیدونم', 'مشکل', 'تجربه', 'نظرت', 'پیشنهاد']):
-        score += 2.5
-    if any(k in txt for k in ['ارسال', 'پرداخت', 'usdt', 'trc20', 'ریتالین', 'اوزمپیک', 'مونجارو']):
-        score += 2.0
-        style = "real_answer"
-    if len(txt) > 60 and ('من' in txt or 'دوست' in txt or 'گرفتم' in txt):
-        score += 1.5
-    if 'مهاجرت' in txt or 'ترکیه' in txt or 'دبی' in txt:
-        style = "attract_value"
+    if len(txt) < 8:
+        return {'should_engage': False, 'score': 0.0, 'style': style, 'system_addon': ''}
 
-    # No random engagement — only engage when actually relevant to our domain
-    should = score >= 2.5 or any(k in txt for k in ['ریتالین', 'اوزمپیک', 'مونجارو', 'مودافینیل', 'انسولین', 'ترامادول',
-                                                      'ارسال', 'پرداخت', 'تتر', 'usdt', 'trc20', 'کریپتو',
-                                                      'مهاجرت', 'ترکیه', 'دبی', 'کانادا', 'اقامت'])
+    tiny = {'ok', 'اوکی', 'باشه', 'آره', 'نه', '👍', '😂', '😅', 'خب'}
+    if txt in tiny:
+        return {'should_engage': False, 'score': 0.0, 'style': style, 'system_addon': ''}
+
+    if any(q in txt for q in ['؟', '?', 'چطور', 'چگونه', 'چقدر', 'کجا', 'کی', 'چرا', 'نظرت']):
+        score += 3.0
+    if any(k in txt for k in ['نمیدونم', 'مشکل', 'تجربه', 'پیشنهاد', 'فکر میکنی', 'کسی', 'به نظرت']):
+        score += 2.0
+    if is_domain_topic(txt):
+        score += 2.2
+        style = "real_answer"
+    if any(k in txt for k in ['فیلم', 'سریال', 'هوا', 'کار', 'خواب', 'vpn', 'دلار', 'فوتبال',
+                               'سفر', 'ماشین', 'دانشگاه', 'غذا', 'اینترنت', 'باشگاه', 'شمال']):
+        score += 1.8
+    if len(txt) >= 24:
+        score += 1.2
+    if len(txt) >= 50:
+        score += 0.8
+    if 'مهاجرت' in txt or 'ترکیه' in txt or 'دبی' in txt:
+        score += 1.0
+
+    should = score >= 1.5 or len(txt) >= 22
     addon = ""
     if should:
-        fs = get_few_shots_for_prompt(user_text)
-        addon = f"Style like experienced peer ({style}). {fs}"
+        fs = get_few_shots_for_prompt(user_text, k=1)
+        addon = f"Style like a smart group member ({style}). {fs}"
     return {'should_engage': should, 'score': score, 'style': style, 'system_addon': addon}

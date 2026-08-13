@@ -163,6 +163,30 @@ async def test_group_engagement_style():
     except Exception as e:
         print("  criteria err:", e)
 
+    print("\n8. General-topic (must NOT dump drugs/crypto):")
+    try:
+        from ai.ai_core import classify_intent, retrieve_knowledge, decide_engagement, is_domain_topic, generate_natural_reply_local
+        cases = [
+            ("VPN چی استفاده میکنید؟", False),
+            ("کسی فیلم خوبی دیده اخیرا؟", False),
+            ("کسی تجربه زندگی در استانبول داره؟", False),
+            ("ارسال به استانبول بعد پرداخت چقدر طول میکشه؟", True),
+            ("ریتالین موجوده؟", True),
+        ]
+        for q, expect_domain in cases:
+            i = classify_intent(q)
+            k = retrieve_knowledge(q, i['intent'])
+            d = is_domain_topic(q, i['intent'])
+            eng = decide_engagement(q)
+            local = generate_natural_reply_local(q, i['intent'], k)
+            ok_domain = d == expect_domain
+            leak = (not expect_domain) and any(x in (k + local).lower() for x in ['ریتالین', 'usdt', 'trc20', 'اوزمپیک'])
+            print(f"   {q[:42]:<42} domain={d} intent={i['intent']} klen={len(k)} engage={eng['should_engage']} {'✓' if ok_domain and not leak else '✗ LEAK' if leak else '≈'}")
+            if leak:
+                print(f"      leak preview: {(k or local)[:80]}")
+    except Exception as e:
+        print("  general-topic err:", e)
+
 if __name__ == "__main__":
     asyncio.run(main())
     asyncio.run(test_group_engagement_style())

@@ -58,9 +58,9 @@ class Qwen3Client:
         ).rstrip('/')
         self.model = os.getenv('QWEN3_MODEL', os.getenv('OLLAMA_MODEL', 'qwen3:1.7b'))
         self.timeout = float(os.getenv('QWEN3_TIMEOUT', '95'))
-        self.default_max_tokens = int(os.getenv('QWEN3_MAX_TOKENS', '280'))
-        self.default_temperature = float(os.getenv('QWEN3_TEMPERATURE', '0.44'))
-        self.default_num_ctx = int(os.getenv('QWEN3_NUM_CTX', '3072'))
+        self.default_max_tokens = int(os.getenv('QWEN3_MAX_TOKENS', '320'))
+        self.default_temperature = float(os.getenv('QWEN3_TEMPERATURE', '0.52'))
+        self.default_num_ctx = int(os.getenv('QWEN3_NUM_CTX', '4096'))
         self._last_health: Tuple[bool, float] = (False, 0.0)
         self._cooldown_until = 0.0
 
@@ -103,15 +103,16 @@ class Qwen3Client:
             "messages": messages,
             "stream": False,
             "think": bool(use_think),
+            "keep_alive": -1,
             "options": {
                 "temperature": temperature if temperature is not None else self.default_temperature,
                 "num_predict": max_tokens or self.default_max_tokens,
                 "num_ctx": num_ctx or self.default_num_ctx,
-                "top_p": 0.90,
+                "top_p": 0.92,
                 "top_k": 40,
-                "repeat_penalty": 1.15,
+                "repeat_penalty": 1.12,
                 "repeat_last_n": 96,
-                "num_thread": int(os.getenv('QWEN3_NUM_THREAD', '4')),
+                "num_thread": int(os.getenv('QWEN3_NUM_THREAD', '16')),
             },
         }
 

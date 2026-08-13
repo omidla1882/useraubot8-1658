@@ -14336,6 +14336,11 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     if llm_result and not retrieved:
         if any(k in llm_result for k in ('ریتالین', 'اوزمپیک', 'مودافینیل', 'دارو بخور', 'دارو بخورد')):
             llm_result = None
+        casual = ('آره', 'راستش', 'به نظرم', 'خودم', 'منم', 'معمولا', 'من که', 'تو چی', 'جالبه')
+        if llm_result and not any(c in llm_result for c in casual):
+            llm_result = None
+        if llm_result and user_text and user_text.strip()[:18] in llm_result[:50]:
+            llm_result = None
 
     # Multi-layer selection + final strict gates
     hist = list(group_exchange_history.get(chat_id, []))

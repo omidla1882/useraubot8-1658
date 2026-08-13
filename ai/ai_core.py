@@ -854,6 +854,8 @@ def salvage_llm_output(text: str, retrieved: str = "") -> str:
         keep.append(p)
     if not keep:
         return ""
+    if len(keep) == 1 and keep[0].endswith(('؟', '?')) and len(keep[0]) < 48:
+        return ""
     out = ' '.join(keep).strip()
     if retrieved:
         keys = [k for k in (
@@ -878,6 +880,7 @@ def pick_best_or_fallback(llm_text: str, local_text: str, intent: str = "") -> s
 # Few-shot bank — general group chat first, domain examples only when relevant
 FEW_SHOT_BANK = [
     ("VPN چی استفاده میکنید؟", "من وایرفگارد رو با کلش قاطی میکنم. وایرفگارد پایدارتره، کلش برای روزمره راحت‌تره. تو چی داری؟"),
+    ("VPN چی خوبه الان؟", "من کلش میکس می‌زنم ولی وایرفگارد کمتر قطع میشه. تو کدومو تست کردی؟"),
     ("هوای تهران امروز چطوره؟", "مثل همیشه شلوغ و یه کم گرفته. اگه میتونی عصر برو بیرون بهتره. تو کدوم منطقه‌ای؟"),
     ("فیلم خوبی دیدی اخیرا؟", "یه سریال شروع کردم ولی نصفه رها کردم. تو چی دیدی که ارزش وقت گذاشتن داشته باشه؟"),
     ("کسی استانبول زندگی کرده؟", "چند بار رفتم. محله خیلی فرق میکنه؛ بشیکتاش گرون‌تره، کادیکوی آروم‌تر. هدفت کاره یا زندگی؟"),
@@ -911,7 +914,31 @@ FEW_SHOT_BANK = [
     ("پرداخت با کریپتو امن هست؟", "بله اگر شبکه درست انتخاب کنی. TRC20 کم ریسک‌تره و سریع. خودم چند بار زدم مشکلی نبود."),
 ]
 
+_FS_STOP = frozenset({
+    'این', 'اون', 'که', 'از', 'با', 'تو', 'رو', 'چی', 'برای', 'کسی', 'چطور',
+    'آیا', 'روزا', 'امروز', 'الان', 'یه', 'هم', 'شده', 'هست', 'داره', 'کنید',
+})
+
+
 def get_few_shots_for_prompt(query: str, k: int = 3) -> str:
+    q = (query or "").lower()
+    domain = is_domain_topic(query)
+    scored = []
+    for ex_q, ex_a in FEW_SHOT_BANK:
+        if not domain and is_domain_topic(ex_q):
+            continue
+        sc = sum(1 for w in q.split() if w and len(w) > 2 and w not in _FS_STOP and w in ex_q.lower())
+        if sc:
+            scored.append((sc, f"کاربر: «{ex_q}»\nپاسخ طبیعی: «{ex_a}»"))
+    scored.sort(reverse=True)
+    if scored:
+        return "\n".join([s[1] for s in scored[:k]])
+    if not domain:
+        generals = [(eq, ea) for eq, ea in FEW_SHOT_BANK if not is_domain_topic(eq)]
+        if generals:
+            ex_q, ex_a = random.choice(generals)
+            return f"کاربر: «{ex_q}»\nپاسخ طبیعی: «{ex_a}»"
+    return ""
     q = (query or "").lower()
     domain = is_domain_topic(query)
     scored = []
@@ -999,7 +1026,7 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
     q = (user_text or "").lower()
     matches = []
     for ex_q, ex_a in FEW_SHOT_BANK:
-        score = sum(1 for w in q.split() if len(w) > 2 and w in ex_q.lower())
+        score = sum(1 for w in q.split() if len(w) > 2 and w not in _FS_STOP and w in ex_q.lower())
         if score >= 1:
             matches.append((score, ex_a))
     if matches:

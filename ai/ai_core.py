@@ -728,7 +728,7 @@ def compose_knowledge(query: str, intent: str = "") -> str:
     return compose_knowledge_for_prompt(query, intent) or retrieve_knowledge(query, intent)
 
 # expose new
-__all__ = ['classify_intent', 'retrieve_knowledge', 'compose_knowledge_for_prompt', 'compose_knowledge_response', 'plan_response', 'is_repeated_response', 'get_drug_context_snippet', 'match_drug_family', 'get_family_info', 'decide_engagement', 'ModelDirector', 'ContentIntelligence', 'is_weak_llm_output', 'get_few_shots_for_prompt', 'repair_llm_output', 'pick_best_or_fallback', 'is_domain_topic']
+__all__ = ['classify_intent', 'retrieve_knowledge', 'compose_knowledge_for_prompt', 'compose_knowledge_response', 'plan_response', 'is_repeated_response', 'get_drug_context_snippet', 'match_drug_family', 'get_family_info', 'decide_engagement', 'ModelDirector', 'ContentIntelligence', 'is_weak_llm_output', 'get_few_shots_for_prompt', 'repair_llm_output', 'salvage_llm_output', 'pick_best_or_fallback', 'is_domain_topic']
 
 
 # ── Lightweight Conversation Strategist (Phase 2) ─────────────────────────────
@@ -798,6 +798,19 @@ def repair_llm_output(text: str, language: str = 'fa') -> str:
     text = re.sub(r'کلکشن', '', text, flags=re.I)
     text = re.sub(r'تخمیر|هواپلتر|حماست', '', text)
     text = re.sub(r'^فکر کنم[،,\.]?\s*', '', text)
+    text = re.sub(
+        r'^(به این موضوع اشاره می‌کنم|در پاسخ باید گفت|لازم به ذکر است)[:：]?\s*',
+        '',
+        text,
+    )
+    text = re.sub(
+        r'[^.؟!]*('
+        r'چت تلگرام|فقط نظر بده|با فکر کنم شروع نکن|از اطلاعات بالا|'
+        r'جواب طبیعی|تعریف لغت نده|فروش نکن|میتونم به جواب سوال'
+        r')[^.؟!]*[.؟!]?\s*',
+        '',
+        text,
+    )
     text = re.sub(r'\.\s*است\.', '.', text)
     # Don't spam the same personal claim
     if text.count('خودم گرفتم') > 1:
@@ -820,6 +833,39 @@ def repair_llm_output(text: str, language: str = 'fa') -> str:
     return text.strip()
 
 
+def salvage_llm_output(text: str, retrieved: str = "") -> str:
+    """Keep the useful sentences from a mixed small-model reply; drop instruction echo."""
+    text = repair_llm_output(text or "")
+    if not text:
+        return ""
+    parts = re.split(r'(?<=[.؟!])\s+', text)
+    keep = []
+    for part in parts:
+        p = part.strip()
+        if len(p) < 12:
+            continue
+        if re.search(
+            r'چت تلگرام|فقط نظر بده|فکر کنم شروع|از اطلاعات بالا|جواب سوال من',
+            p,
+        ):
+            continue
+        if p.count('؟') + p.count('?') >= 2:
+            continue
+        keep.append(p)
+    if not keep:
+        return ""
+    out = ' '.join(keep).strip()
+    if retrieved:
+        keys = [k for k in (
+            'ریتالین', 'کنسرتا', 'کونسرتا', 'اوزمپیک', 'مودافینیل', 'trc20', 'usdt', 'ساعت',
+        ) if k in retrieved.lower() or k in retrieved]
+        if keys and not any(k in out.lower() for k in keys):
+            keyed = [s for s in keep if any(k in s.lower() for k in keys)]
+            if keyed:
+                out = ' '.join(keyed).strip()
+    return repair_llm_output(out)
+
+
 def pick_best_or_fallback(llm_text: str, local_text: str, intent: str = "") -> str:
     """Guard + prefer grounded local/composed when LLM weak (web3test pick_faq_over_llm pattern)."""
     if llm_text and not is_weak_llm_output(llm_text):
@@ -840,6 +886,11 @@ FEW_SHOT_BANK = [
     ("باشگاه میرید این روزا؟", "هفته‌ای سه بار میرم ولی نظمم ضعیفه. تو قدرته یا هوازی؟"),
     ("اینترنت امروز افتضاحه", "آره منم کند شده. فیلترشکن عوض کردم یه کم بهتر شد. مال تو کدوم اپراتوره؟"),
     ("کسی شمال رفته اخیرا؟", "جاده شلوغه آخر هفته. وسط هفته بهتره. کجا می‌خوای بری؟"),
+    ("ترافیک امروز چطوره؟", "مثل همیشه قفل. اگه اجباری نیست یه ساعت دیرتر بزن. تو کدوم مسیر هستی؟"),
+    ("آیفون بهتره یا سامسونگ؟", "بستگه به کارتت. من اندرویدم چون آزادی بیشتری داره، ولی دوربین آیفون ثابته. تو چیکار میکنی باهاش؟"),
+    ("شب فوتبال میبینی؟", "گهگاهی. اگه بازی حساس باشه میشینم. امشب چیزی هست؟"),
+    ("غذا چی درست کردید؟", "یه چیزی ساده. حوصله آشپزی طولانی نداشتم. تو چی خوردی؟"),
+    ("فیلترشکن چی خوبه الان؟", "وایرفگارد پایدارتره برام. کلش هم برای روزمره بد نیست. مال تو چیه؟"),
     ("تو رباتی؟", "نه داداش، اینجام. بگو چی شده."),
     ("سلام بچه‌ها", "سلام. چه خبر، امروز گروه آرومه."),
     ("نظرتون چیه کار از خونه بهتره؟", "برای تمرکز خوبه ولی آدم تنبل میشه. من ترکیبی بهتر نتیجه گرفتم. تو چیکار میکنی؟"),
@@ -880,6 +931,9 @@ def get_few_shots_for_prompt(query: str, k: int = 3) -> str:
             return f"کاربر: «{ex_q}»\nپاسخ طبیعی: «{ex_a}»"
     return ""
 
+_LAST_LOCAL_REPLIES = []
+
+
 def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: str = "", style: str = "general_engage") -> str:
     """High-quality local reply when Qwen is slow/unavailable. Never raw knowledge paste."""
 
@@ -909,6 +963,7 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
     if retrieved:
         natural = _naturalize_knowledge(retrieved, intent)
         if natural and len(natural) >= 30:
+            _LAST_LOCAL_REPLIES.append(natural)
             return natural
     # 1. Instant pools for social intents
     _SOCIAL = {
@@ -950,10 +1005,15 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
     if matches:
         matches.sort(reverse=True)
         top_score, top_answer = matches[0]
-        if top_score >= 2 and (is_domain_topic(user_text) or not is_domain_topic(top_answer)):
-            return top_answer
+        close = [a for s, a in matches if s >= max(1, top_score - 1)]
+        unused = [a for a in close if a not in _LAST_LOCAL_REPLIES[-6:]]
+        pick = random.choice(unused or close)
+        if top_score >= 2 and (is_domain_topic(user_text) or not is_domain_topic(pick)):
+            _LAST_LOCAL_REPLIES.append(pick)
+            return pick
         if top_score >= 1 and intent not in ('unknown', 'clarification', 'help_request', 'complaint') and is_domain_topic(user_text):
-            return top_answer
+            _LAST_LOCAL_REPLIES.append(pick)
+            return pick
 
     # 3. Intent-specific fallback pools (grounded, varied, natural)
     _INTENT_POOL: Dict[str, List[str]] = {
@@ -1000,10 +1060,20 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
             "راستش بستگه به شرایط. تو خودت چی فکر میکنی؟",
             "منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟",
             "اوکی فهمیدم. نظرت خودت چیه؟",
+            "آره این موضوع آشناست. یه کم بیشتر بگو.",
         ],
     }
     pool = _INTENT_POOL.get(intent, _INTENT_POOL['unknown'])
-    return random.choice(pool)
+    choice = random.choice(pool)
+    recent = _LAST_LOCAL_REPLIES[-6:]
+    if choice in recent:
+        unused = [p for p in pool if p not in recent]
+        if unused:
+            choice = random.choice(unused)
+    _LAST_LOCAL_REPLIES.append(choice)
+    if len(_LAST_LOCAL_REPLIES) > 24:
+        del _LAST_LOCAL_REPLIES[:12]
+    return choice
 
 def decide_engagement(user_text: str, recent_ctx: str = "", group_notes: str = "") -> dict:
     """Engage on any real group conversation, not only drugs/crypto."""

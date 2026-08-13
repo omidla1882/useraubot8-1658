@@ -367,6 +367,10 @@ _FORMAL_TO_CASUAL = {
     'می‌توان': 'میشه', 'نمی‌توان': 'نمیشه',
     'می‌بایست': 'باید', 'ضرورت دارد': 'لازمه', 'الزامی است': 'حتماً باید',
     'بنابراین': 'پس', 'لذا': 'پس', 'از این رو': 'به همین دلیل',
+    'انجام میدهد': 'انجام میده', 'انجام می‌دهد': 'انجام میده',
+    'درمان میکند': 'درمان میکنه', 'درمان می‌کند': 'درمان میکنه',
+    'تأیید میشود': 'تأیید میشه', 'تأیید می‌شود': 'تأیید میشه',
+    'به این موضوع اشاره می‌کنم': '', 'به این موضوع اشاره ميکنم': '',
 }
 
 
@@ -14270,8 +14274,8 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
         cleaned = _clean_natural(raw)
         cleaned = _repair_group_output(cleaned)
         try:
-            from ai.ai_core import repair_llm_output as _r
-            cleaned = _r(cleaned)
+            from ai.ai_core import repair_llm_output as _r, salvage_llm_output as _salv
+            cleaned = _salv(_r(cleaned), retrieved or "")
         except Exception:
             pass
         if is_high_quality_natural(cleaned) and len(cleaned) >= 22:
@@ -14293,32 +14297,7 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
             if _keys and not any(k in llm_result.lower() for k in _keys):
                 llm_result = None
 
-    # Re-prompt only if we got raw text but quality gate rejected it (skip if timeout)
-    if (not llm_result) and raw and not llm_err:
-        try:
-            force_messages = list(messages)
-            force_messages.append({
-                "role": "user",
-                "content": "جواب قبلی ضعیف بود. ۲-۳ جمله طبیعی فارسی بنویس. مثل دوست حرف بزن."
-            })
-            if _qwen3_client is not None:
-                res2 = await asyncio.wait_for(
-                    _qwen3_client.chat(force_messages, max_tokens=240, temperature=0.48,
-                                       use_think=False, num_ctx=num_ctx, retries=1),
-                    timeout=GROUP_AI_TIMEOUT_SECONDS,
-                )
-                raw2 = (res2.get("content") or "").strip()
-                if raw2:
-                    c2 = _clean_natural(_repair_group_output(raw2))
-                    try:
-                        from ai.ai_core import repair_llm_output as _r2
-                        c2 = _r2(c2)
-                    except Exception:
-                        pass
-                    if is_high_quality_natural(c2) and len(c2) >= 25:
-                        llm_result = c2
-        except Exception:
-            pass
+    # No second Qwen call — extra re-prompt starves live replies on 1.7b CPU.
 
     try:
         from ai.ai_core import is_weak_llm_output as _weak2
@@ -14336,7 +14315,7 @@ async def call_qwen3_natural(recent_ctx: list, user_text: str, chat_id: int = No
     if llm_result and not retrieved:
         if any(k in llm_result for k in ('ریتالین', 'اوزمپیک', 'مودافینیل', 'دارو بخور', 'دارو بخورد')):
             llm_result = None
-        casual = ('آره', 'راستش', 'به نظرم', 'خودم', 'منم', 'معمولا', 'من که', 'تو چی', 'جالبه')
+        casual = ('آره', 'راستش', 'به نظرم', 'خودم', 'منم', 'معمولا', 'معمولاً', 'من که', 'تو چی', 'جالبه')
         if llm_result and not any(c in llm_result for c in casual):
             llm_result = None
         if llm_result and user_text and user_text.strip()[:18] in llm_result[:50]:

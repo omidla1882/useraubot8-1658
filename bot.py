@@ -653,7 +653,7 @@ QWEN3_MODEL = os.environ.get('QWEN3_MODEL', 'qwen3:1.7b')
 
 # محدودیت: حداکثر 1 پاسخ AI در هر گروه در این بازه زمانی (ثانیه) — STRONG anti-spam
 GROUP_AI_COOLDOWN_SECONDS = 70    # حضور طبیعی‌تر در گروه‌های خود کاربر
-GROUP_AI_TIMEOUT_SECONDS = 95     # زمان بیشتر برای مدل کند CPU (qwen3:1.7b)
+GROUP_AI_TIMEOUT_SECONDS = 110    # هم‌تراز با QWEN_INFERENCE_TIMEOUT روی سرور
 QWEN3_MAX_RETRIES = 1             # یک تلاش اضافه کافی است؛ بیشتر مدل CPU را قفل می‌کند
 _last_global_qwen = 0.0
 MIN_GLOBAL_QWEN_INTERVAL = 10     # حداقل فاصله بین دو فراخوانی مدل (کل گروه‌ها)
@@ -663,6 +663,65 @@ MIN_GLOBAL_QWEN_INTERVAL = 10     # حداقل فاصله بین دو فراخو
 # ═══════════════════════════════════════════════════════════
 MIN_GROUP_BOT_INTERVAL = 70   # حداقل فاصله بین هر پیام ربات در یک گروه
 last_group_bot_send: Dict[int, float] = {}
+
+# Premium custom emoji (Telegram Premium) — filled after client.start
+_ACCOUNT_PREMIUM = False
+_CUSTOM_EMOJI_IDS: Dict[str, int] = {}
+
+
+def _utf16_len(s: str) -> int:
+    return len((s or "").encode("utf-16-le")) // 2
+
+
+async def init_human_style():
+    """Detect Premium and cache custom-emoji document ids when available."""
+    global _ACCOUNT_PREMIUM, _CUSTOM_EMOJI_IDS
+    try:
+        me = await client.get_me()
+        _ACCOUNT_PREMIUM = bool(getattr(me, "premium", False))
+        slog(f"human_style premium={_ACCOUNT_PREMIUM}")
+        if not _ACCOUNT_PREMIUM:
+            return
+        from telethon.tl.functions.messages import SearchCustomEmojiRequest
+        for emo in ["😂", "😅", "🔥", "👍", "❤️", "🤔", "✌️", "🙂", "💪", "🎬"]:
+            try:
+                res = await client(SearchCustomEmojiRequest(emoticon=emo, hash=0))
+                ids = list(getattr(res, "document_id", []) or [])
+                if ids:
+                    _CUSTOM_EMOJI_IDS[emo] = int(ids[0])
+            except Exception:
+                continue
+        slog(f"custom_emoji cached={len(_CUSTOM_EMOJI_IDS)}")
+    except Exception as e:
+        slog(f"human_style init skip: {e}")
+
+
+async def send_group_human(chat, text: str, reply_to=None):
+    """Send a group message with at most one natural emoji (premium custom if cached)."""
+    try:
+        from ai.human_style import decorate_human_text
+        text, emo = decorate_human_text(text or "")
+    except Exception:
+        emo = ""
+    kwargs = {}
+    if reply_to:
+        kwargs["reply_to"] = reply_to
+    if emo and emo in _CUSTOM_EMOJI_IDS:
+        try:
+            from telethon.tl.types import MessageEntityCustomEmoji
+            offset = _utf16_len(text) - _utf16_len(emo)
+            if offset < 0:
+                offset = 0
+            kwargs["formatting_entities"] = [
+                MessageEntityCustomEmoji(
+                    offset=offset,
+                    length=_utf16_len(emo),
+                    document_id=_CUSTOM_EMOJI_IDS[emo],
+                )
+            ]
+        except Exception:
+            pass
+    return await client.send_message(chat, text, **kwargs)
 
 # PM anti-duplicate: per-user cooldown (نه فقط یک‌بار اولیه)
 _pm_last_reply: Dict[int, float] = {}   # user_id -> timestamp آخرین پاسخ
@@ -1247,15 +1306,17 @@ class IntelligentGroupEngager:
         return None
 
     async def generate_starter(self, gid: int, recent_ctx: str = "") -> Optional[str]:
-        """Use curated starters. Do not call Qwen here — it starves real replies."""
+        """Context-aware curated starter. No Qwen call — keeps the model free for replies."""
         try:
             if not can_send_to_group_safely(gid):
                 return None
+            from ai.human_style import pick_context_starter
+            choice = pick_context_starter(recent_ctx or "")
+            if choice and (is_high_quality_natural(choice) or len(choice) > 20):
+                return choice
             pool = CONVERSATION_STARTERS if 'CONVERSATION_STARTERS' in globals() else []
             if pool:
-                choice = random.choice(pool)
-                if is_high_quality_natural(choice) or len(choice) > 20:
-                    return choice
+                return random.choice(pool)
         except Exception:
             pass
         return None
@@ -1266,11 +1327,15 @@ class IntelligentGroupEngager:
             return None
         if not can_send_to_group_safely(gid):
             return None
-        lines = [
-            "اگه خواستی جزئیاتش رو پی‌وی بگو راحت‌تر حرف میزنیم.",
-            "اینجا شلوغه، پی‌وی پیام بده ادامه بدیم.",
-            "جزئیاتش بهتره خصوصی حرف بزنیم، پیام بده.",
-        ]
+        try:
+            from ai.human_style import funnel_lines
+            lines = funnel_lines()
+        except Exception:
+            lines = [
+                "اگه خواستی جزئیاتش رو پی‌وی بگو راحت‌تر حرف میزنیم.",
+                "اینجا شلوغه، پی‌وی پیام بده ادامه بدیم.",
+                "جزئیاتش بهتره خصوصی حرف بزنیم، پیام بده.",
+            ]
         self.mark_funnel_sent(gid, uid)
         return random.choice(lines)
 
@@ -14491,7 +14556,7 @@ async def handle_group_ai(event):
             if is_mentioned:
                 fb = _intent_fallback('unknown', text)
                 if fb:
-                    await event.reply(fb)
+                    await send_group_human(chat_id, fb, reply_to=event.message.id)
                     group_ai_last_response[chat_id] = now
             return
 
@@ -14503,7 +14568,7 @@ async def handle_group_ai(event):
 
         group_ai_last_response[chat_id] = now
 
-        await event.reply(response)
+        await send_group_human(chat_id, response, reply_to=event.message.id)
         record_group_bot_send(chat_id)
         _record_bot_output(chat_id, response)
         group_exchange_history[chat_id].append(("bot", response))
@@ -14521,7 +14586,7 @@ async def handle_group_ai(event):
                 funnel_ctx = "\n".join([t for _, t in list(group_exchange_history[chat_id])[-5:]])
                 funnel_msg = await group_engager.maybe_funnel(chat_id, sender_id, funnel_ctx)
                 if funnel_msg and is_high_quality_natural(funnel_msg):
-                    await event.reply(funnel_msg)
+                    await send_group_human(chat_id, funnel_msg, reply_to=event.message.id)
                     record_group_bot_send(chat_id)
                     slog(f"📩 ENGAGER PM funnel → user {sender_id} in {chat_id}")
         except Exception as _fe:
@@ -14589,23 +14654,26 @@ async def generate_pm_funnel_msg(recent_ctx: str, exchange_count: int = 3, chat_
 
 # ── Strengthened Proactive Natural Engagement (observer) ─────────────────────
 PROACTIVE_ENABLED = True
-PROACTIVE_MAX_PER_GROUP_DAY = 10
+PROACTIVE_MAX_PER_GROUP_DAY = 12
 _proactive_counters: Dict[int, int] = defaultdict(int)
 _proactive_day = date.today()
 
 # Natural conversation starters — posted proactively to initiate conversations
 # Mix of pharma, crypto, migration, and general topics to seem human
 CONVERSATION_STARTERS = [
-    "راستی یه سوال، VPN چی استفاده میکنید این روزا؟",
-    "اینترنت امروز خیلی افتضاحه. مال شما هم همینه؟",
-    "کسی فیلم یا سریال خوبی دیده اخیرا که ارزش وقت گذاشتن داشته باشه؟",
+    "سلام بچه‌ها، امروز چه خبر؟",
+    "سلام. گروه امروز آرومه یا من دیر اومدم؟",
+    "راستی VPN چی استفاده میکنید این روزا؟",
+    "فیلترشکن امروز خیلی ضعیف شده. مال شما هم همینه؟",
+    "کسی فیلم یا سریال خوبی دیده که ارزش وقت گذاشتن داشته باشه؟",
     "کار از خونه بهتره یا دفتر؟ من که تمرکزم تو خونه بهتره.",
     "خوابتون منظمه این روزا یا مثل من بهم ریخته؟",
     "کسی شمال رفته اخیرا؟ جاده آخر هفته چطوره؟",
     "دلار اینقدر نوسان داره که آدم گیج میشه. شما هم دنبال خبرین؟",
     "باشگاه میرید این روزا یا ول کردین؟",
-    "هوای شهرتون چطوره امروز؟ تهران که گرفته‌ست.",
-    "سلام بچه‌ها. امروز گروه آرومه، چه خبر؟",
+    "هوای شهرتون چطوره امروز؟",
+    "ترافیک امروز چطوره پیش شما؟",
+    "امروز ناهار چی درست کردید؟ حوصله آشپزی نداشتم.",
     "کسی تجربه زندگی در استانبول داره؟ هزینه زندگی چطوره؟",
     "مهاجرت ترکیه هنوز ارزش داره یا خیلی گرون شده؟",
     "نوبیتکس یا والکس — کدومو ترجیح میدید؟",
@@ -14615,7 +14683,7 @@ CONVERSATION_STARTERS = [
 
 # Track last starter time per group to avoid posting too often
 _last_starter_time: Dict[int, float] = {}
-_starter_min_interval = 720  # حداقل 12 دقیقه بین starters per group
+_starter_min_interval = 600  # حداقل 10 دقیقه بین starters per group
 
 async def _post_conversation_starter(gid: int) -> bool:
     """CENTRALIZED: Use engager.generate_starter for fully intelligent dynamic starters."""
@@ -14633,7 +14701,7 @@ async def _post_conversation_starter(gid: int) -> bool:
         if _is_repetitive_or_similar(gid, starter):
             return False
         await simulate_read_and_type(client, gid, len(starter or "40"))
-        await client.send_message(gid, starter)
+        await send_group_human(gid, starter)
         _last_starter_time[gid] = now
         record_group_bot_send(gid)
         _record_bot_output(gid, starter)
@@ -14676,11 +14744,11 @@ async def group_observer_task():
             me = await client.get_me()
             my_id = me.id if me else 0
 
-            candidates = random.sample(groups, min(5, len(groups)))
+            candidates = random.sample(groups, min(6, len(groups)))
             acted = False
 
-            # Mode 2: occasional starter — curated lines, no extra Qwen call
-            if random.random() < 0.26:
+            # Mode 2: occasional starter — curated, context-aware, no extra Qwen call
+            if random.random() < 0.30:
                 starter_candidates = [
                     g for g in candidates
                     if _proactive_counters.get(g, 0) < PROACTIVE_MAX_PER_GROUP_DAY
@@ -14709,7 +14777,7 @@ async def group_observer_task():
 
                         candidate_msgs = []
                         for m in msgs:
-                            if not m.text or len(m.text.strip()) < 8:
+                            if not m.text or len(m.text.strip()) < 6:
                                 continue
                             if not m.sender_id or m.sender_id == my_id:
                                 continue
@@ -14740,6 +14808,8 @@ async def group_observer_task():
                                 score += 3
                             if any(kw in txt for kw in ['مهاجرت', 'ترکیه', 'دبی', 'کانادا', 'ویزا', 'اقامت']):
                                 score += 2.5
+                            if any(kw in txt for kw in ['سلام', 'درود', 'چه خبر', 'خوبی', 'چطوری']):
+                                score += 2.0
                             if any(kw in txt for kw in ['کمک', 'راهنما', 'نمیدونم', 'مشکل', 'سوال', 'تجربه', 'نظرت']):
                                 score += 2.5
                             # personal / story signals (high PM conversion potential)
@@ -14757,16 +14827,15 @@ async def group_observer_task():
                             return score
 
                         candidate_msgs.sort(key=_msg_score, reverse=True)
-                        target_msg = candidate_msgs[0]
-                        if _msg_score(target_msg) < 1.5:
+                        viable = [m for m in candidate_msgs if _msg_score(m) >= 1.2]
+                        if not viable:
                             continue
+                        pool = viable[:5]
+                        if random.random() < 0.45 and len(pool) > 1:
+                            target_msg = random.choice(pool)
+                        else:
+                            target_msg = pool[0]
 
-                        # Phase 2: Use IntelligentGroupEngager for selection + generation
-                        selected = await group_engager.select_best_message_to_reply(gid, candidate_msgs)
-                        if not selected:
-                            continue
-
-                        target_msg = selected
                         target_text = target_msg.text.strip()
                         target_uid = target_msg.sender_id
 
@@ -14794,7 +14863,7 @@ async def group_observer_task():
 
                             if not can_send_to_group_safely(gid):
                                 continue
-                            await client.send_message(gid, resp, reply_to=target_msg.id)
+                            await send_group_human(gid, resp, reply_to=target_msg.id)
                             record_group_bot_send(gid)
                             _proactive_counters[gid] += 1
                             _record_bot_output(gid, resp)
@@ -14817,9 +14886,9 @@ async def group_observer_task():
                                 await asyncio.sleep(random.uniform(120, 300))
                                 if can_send_to_group_safely(gid):
                                     ctx_for_funnel = "\n".join([t for _, t in list(group_exchange_history[gid])[-5:]])
-                                    funnel_msg = await generate_pm_funnel_msg(ctx_for_funnel, count, chat_id=gid)
+                                    funnel_msg = await group_engager.maybe_funnel(gid, target_uid, ctx_for_funnel)
                                     if funnel_msg and is_high_quality_natural(funnel_msg):
-                                        await client.send_message(gid, funnel_msg, reply_to=target_msg.id)
+                                        await send_group_human(gid, funnel_msg, reply_to=target_msg.id)
                                         record_group_bot_send(gid)
                                         group_engager.mark_funnel_sent(gid, target_uid)
                                         slog(f"📩 PM funnel → uid={target_uid} gid={gid}")
@@ -15270,6 +15339,10 @@ async def main():
             await client.start()
             print("✅ Telethon client started successfully", flush=True)
             _started = True
+            try:
+                await init_human_style()
+            except Exception as _hs:
+                print(f"human_style init: {_hs}", flush=True)
         except Exception as _e:
             _err = str(_e)
             print(f"❌ Telethon start error (attempt {_attempt}): {_err[:200]}", flush=True)

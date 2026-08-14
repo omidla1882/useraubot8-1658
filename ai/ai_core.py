@@ -763,7 +763,7 @@ def is_weak_llm_output(text: str, language: str = 'fa') -> bool:
         return True
     if (text.count('؟') + text.count('?')) >= 3:
         return True
-    if any(x in t for x in ('نبادن', 'به من بودن', 'چه جا؟', 'شما نبودید', 'دارو بخورد', 'چت تلگرام', 'بسیار مهم است')):
+    if any(x in t for x in ('نبادن', 'به من بودن', 'چه جا؟', 'شما نبودید', 'دارو بخورد', 'چت تلگرام', 'بسیار مهم است', 'پس از پرداخت')):
         return True
     return False
 
@@ -799,7 +799,8 @@ def repair_llm_output(text: str, language: str = 'fa') -> str:
     text = re.sub(r'تخمیر|هواپلتر|حماست', '', text)
     text = re.sub(r'^فکر کنم[،,\.]?\s*', '', text)
     text = re.sub(
-        r'^(به این موضوع اشاره می‌کنم|در پاسخ باید گفت|لازم به ذکر است)[:：]?\s*',
+        r'^(به این موضوع اشاره می‌کنم|در پاسخ باید گفت|لازم به ذکر است|'
+        r'پس از پرداخت|با توجه به اینکه|در خصوص این موضوع)[:：]?\s*',
         '',
         text,
     )
@@ -895,7 +896,9 @@ FEW_SHOT_BANK = [
     ("غذا چی درست کردید؟", "یه چیزی ساده. حوصله آشپزی طولانی نداشتم. تو چی خوردی؟"),
     ("فیلترشکن چی خوبه الان؟", "وایرفگارد پایدارتره برام. کلش هم برای روزمره بد نیست. مال تو چیه؟"),
     ("تو رباتی؟", "نه داداش، اینجام. بگو چی شده."),
-    ("سلام بچه‌ها", "سلام. چه خبر، امروز گروه آرومه."),
+    ("سلام بچه‌ها", "سلام. تازه اومدم ببینم امروز گروه چطوره، چه خبر؟"),
+    ("دانشگاه چطوره این ترم؟", "سخت گرفته این ترم. خودم تمرکزم کمه. تو چی میخونی؟"),
+    ("قهوه میخوری یا چای؟", "من قهوه، وگرنه ظهر خوابم میبره. تو کدومو؟"),
     ("نظرتون چیه کار از خونه بهتره؟", "برای تمرکز خوبه ولی آدم تنبل میشه. من ترکیبی بهتر نتیجه گرفتم. تو چیکار میکنی؟"),
     ("ارسال به استانبول چقدر طول میکشه؟", "معمولاً ۴-۸ ساعت بعد تأیید پرداخت. بسته محرمانه میاد. من خودم چند بار گرفتم، سریع بود."),
     ("چطور با تتر پرداخت کنم؟", "TRC20 رو انتخاب کن، کارمزدش پایینه. آدرس رو دقیق کپی کن. بعد از واریز ۵-۱۵ دقیقه تأیید میشه."),
@@ -928,24 +931,6 @@ def get_few_shots_for_prompt(query: str, k: int = 3) -> str:
         if not domain and is_domain_topic(ex_q):
             continue
         sc = sum(1 for w in q.split() if w and len(w) > 2 and w not in _FS_STOP and w in ex_q.lower())
-        if sc:
-            scored.append((sc, f"کاربر: «{ex_q}»\nپاسخ طبیعی: «{ex_a}»"))
-    scored.sort(reverse=True)
-    if scored:
-        return "\n".join([s[1] for s in scored[:k]])
-    if not domain:
-        generals = [(eq, ea) for eq, ea in FEW_SHOT_BANK if not is_domain_topic(eq)]
-        if generals:
-            ex_q, ex_a = random.choice(generals)
-            return f"کاربر: «{ex_q}»\nپاسخ طبیعی: «{ex_a}»"
-    return ""
-    q = (query or "").lower()
-    domain = is_domain_topic(query)
-    scored = []
-    for ex_q, ex_a in FEW_SHOT_BANK:
-        if not domain and is_domain_topic(ex_q):
-            continue
-        sc = sum(1 for w in q.split() if w and len(w) > 1 and w in ex_q.lower())
         if sc:
             scored.append((sc, f"کاربر: «{ex_q}»\nپاسخ طبیعی: «{ex_a}»"))
     scored.sort(reverse=True)
@@ -995,9 +980,9 @@ def generate_natural_reply_local(user_text: str, intent: str = "", retrieved: st
     # 1. Instant pools for social intents
     _SOCIAL = {
         'greeting': [
-            "سلام، خوبی؟ چه خبر ازت؟",
-            "سلام. چه خبر، امروز چطوره؟",
-            "درود، چطوری؟ بگو ببینم.",
+            "سلام. تازه اومدم ببینم امروز گروه چطوره، چه خبر؟",
+            "سلام خوبی؟ من تازه اومدم ببینم چی میگذره.",
+            "درود، چطوری؟ بگو ببینم امروز چه خبره.",
         ],
         'thanks': [
             "خواهش. هر چیزی بود بگو.",

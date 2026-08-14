@@ -41,7 +41,7 @@ async def _get_session() -> aiohttp.ClientSession:
     global _shared_session
     async with _session_lock:
         if _shared_session is None or _shared_session.closed:
-            total = float(os.getenv('QWEN3_TIMEOUT', '95'))
+            total = float(os.getenv('QWEN3_TIMEOUT', '110'))
             _shared_session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=total, connect=12, sock_read=total),
             )
@@ -57,7 +57,7 @@ class Qwen3Client:
             os.getenv('OLLAMA_BASE_URL', 'http://qwen3.railway.internal:11434'),
         ).rstrip('/')
         self.model = os.getenv('QWEN3_MODEL', os.getenv('OLLAMA_MODEL', 'qwen3:1.7b'))
-        self.timeout = float(os.getenv('QWEN3_TIMEOUT', '95'))
+        self.timeout = float(os.getenv('QWEN3_TIMEOUT', '110'))
         self.default_max_tokens = int(os.getenv('QWEN3_MAX_TOKENS', '320'))
         self.default_temperature = float(os.getenv('QWEN3_TEMPERATURE', '0.52'))
         self.default_num_ctx = int(os.getenv('QWEN3_NUM_CTX', '4096'))

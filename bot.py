@@ -300,8 +300,9 @@ def is_high_quality_natural(text: str) -> bool:
     # Stronger: require real verb forms + sentence terminators
     verb_mid = bool(_re.search(
         r'(می‌|میشه|میکنه|داره|هست|است|کرد|شد|گفت|دید|رفت|خواست|میره|میاد|'
-        r'میگم|میدونم|میتونم|نمیدونم|بگید|بپرس|ببین|کنید|شده|داده|گفته|اومده|'
-        r'دارند|هستند|داریم|میخوام|میگه|میگن|باشه|باشد|هستی|میرسه|میکنم|میشم|گرفتم|تجربه|معمولا)',
+        r'میگم|میدونم|میتونم|نمیدونم|بگید|بپرس|ببین|کنید|شده|داده|گفته|اومده|اومدم|'
+        r'دارند|هستند|داریم|میخوام|میگه|میگن|باشه|باشد|هستی|میرسه|میکنم|میشم|گرفتم|تجربه|معمولا|'
+        r'خوبی|چطوره|چطوری|میگذره)',
         t
     ))
     has_persian_content = len(_re.findall(r'[آ-ی]', t)) >= 8
@@ -1131,14 +1132,27 @@ class IntelligentGroupEngager:
             self.user_group_state[key] = {}
         self.user_group_state[key]["last_funnel"] = time.time()
 
+    def _score_target_message(self, m) -> float:
+        """Shared score: keyword presence + optional strategist boost."""
+        from ai.human_style import score_group_message
+        sc = score_group_message(getattr(m, 'text', None) or "")
+        try:
+            if USE_AI_CORE and _strategist:
+                dec = _strategist((m.text or ""))
+                sc += min(dec.get('score', 0) * 0.35, 2.5)
+        except Exception:
+            pass
+        return sc
+
     async def select_best_message_to_reply(self, gid: int, recent_msgs: list) -> Optional[object]:
-        """Improved selection using existing scoring + strategist."""
+        """Pick a reply target like a person: often the best, sometimes a random top candidate."""
+        from ai.human_style import pick_scored_target
         me = await client.get_me()
         my_id = me.id if me else 0
 
         candidates = []
         for m in recent_msgs:
-            if not m.text or len(m.text.strip()) < 8:
+            if not m.text or len(m.text.strip()) < 6:
                 continue
             if m.sender_id == my_id:
                 continue
@@ -1147,39 +1161,9 @@ class IntelligentGroupEngager:
                 continue
             candidates.append(m)
 
-        if not candidates:
-            return None
-
-        # Reuse/improve the existing scoring logic (can be extracted later)
-        def score(m):
-            txt = (m.text or "").lower()
-            sc = 0.0
-            if '?' in txt or '؟' in txt:
-                sc += 5
-            if any(k in txt for k in ['دارو', 'ریتالین', 'اوزمپیک', 'مودافینیل', 'payment', 'usdt', 'ارسال']):
-                sc += 4
-            if any(k in txt for k in ['فیلم', 'سریال', 'هوا', 'کار', 'خواب', 'vpn', 'دلار',
-                                       'فوتبال', 'سفر', 'ماشین', 'دانشگاه', 'غذا', 'اینترنت',
-                                       'باشگاه', 'شمال', 'فیلترشکن']):
-                sc += 3.5
-            if any(k in txt for k in ['کمک', 'تجربه', 'نظرت', 'مشکل', 'سوال']):
-                sc += 3
-            if any(k in txt for k in ['من', 'دوست', 'گرفتم']):
-                sc += 2
-            sc += min(len(txt) / 50, 3)
-            try:
-                if USE_AI_CORE and _strategist:
-                    dec = _strategist(txt)
-                    sc += min(dec.get('score', 0) * 0.4, 3)
-            except:
-                pass
-            return sc
-
-        candidates.sort(key=score, reverse=True)
-        best = candidates[0]
-        if score(best) < 1.6:
-            return None
-        return best
+        return pick_scored_target(
+            candidates, self._score_target_message, min_score=1.2, top_n=5, randomize=0.45
+        )
 
     def _get_personality_mood(self, gid: int) -> str:
         """Rotate subtle human personality/mood for anti-detection and natural variation."""
@@ -1196,11 +1180,7 @@ class IntelligentGroupEngager:
         return moods[idx]
 
     async def generate_valuable_reply(self, gid: int, target_msg, recent_ctx: str, use_llm: bool = True) -> Optional[str]:
-        """
-        MAJOR UPGRADE: 2-stage critique (naturalness + value/funnel), think mode on critique,
-        ultra-rich per-user + group + engine context, personality/mood, PM rapport goal.
-        NEVER returns robotic, incomplete or low-value text.
-        """
+        """One Qwen call (or local fallback). No extra critique pass — that starved live replies."""
         target_text = (target_msg.text or "").strip()
         key = self._user_key(gid, getattr(target_msg, 'sender_id', 0) or 0)
         turns = len(self.user_group_state.get(key, {}).get("turns", []))
@@ -1255,26 +1235,7 @@ class IntelligentGroupEngager:
         if not resp or not is_high_quality_natural(resp):
             return None
 
-        # === STAGE 2: Optional light critique (only for bot_question / complaint — 1 extra call max) ===
-        try:
-            from ai.ai_core import classify_intent as _ci
-            crit_intent = _ci(target_text).get('intent', '')
-        except Exception:
-            crit_intent = ''
-
-        if use_llm and crit_intent in ('bot_question', 'complaint', 'identity_question'):
-            try:
-                critique1 = (
-                    f"این پاسخ رو طبیعی‌تر کن (بدون اشاره به ربات/AI). فقط متن بهبودیافته:\n"
-                    f"کاربر: {target_text}\nپاسخ: {resp}"
-                )
-                c1 = await call_qwen3_natural([], critique1, chat_id=gid, high_value=False, use_think=False)
-                if c1 and c1.strip().upper() != "OK" and is_high_quality_natural(c1) and len(c1) > 18:
-                    resp = c1.strip()
-            except Exception:
-                pass
-
-        # Extra safety pass: if still contains defensive AI talk after critiques, discard
+        # Extra safety pass: if still contains defensive AI talk, discard
         if any(bad in (resp or '').lower() for bad in ['رباتم', 'ربات نیستم', 'شبیه ربات', 'فکر کردی ربات', 'هوش مصنوعی هستم']):
             resp = None
 
@@ -1290,16 +1251,13 @@ class IntelligentGroupEngager:
         return resp
 
     async def process_incoming(self, gid: int, msg, recent_ctx: str) -> Optional[str]:
-        """Central entry point for any group message that deserves reply."""
-        if not can_send_to_group_safely(gid):
+        """Reply to an already-selected incoming message. Do not re-score it away."""
+        if not msg or not can_send_to_group_safely(gid):
             return None
         try:
-            best = await self.select_best_message_to_reply(gid, [msg] if msg else [])
-            if not best:
-                return None
-            reply = await self.generate_valuable_reply(gid, best, recent_ctx)
+            reply = await self.generate_valuable_reply(gid, msg, recent_ctx)
             if reply and is_high_quality_natural(reply):
-                self.record_engagement(gid, getattr(best, 'sender_id', 0) or 0, (best.text or '')[:120], reply[:120])
+                self.record_engagement(gid, getattr(msg, 'sender_id', 0) or 0, (msg.text or '')[:120], reply[:120])
                 return reply
         except Exception:
             pass
@@ -10097,14 +10055,19 @@ CONSECUTIVE_FAILS_THRESHOLD = 3  # کاهش به 3 خطا
 HEALTH_CHECK_INTERVAL = 600  # بررسی سلامت هر 10 دقیقه
 
 # ایجاد کلاینت — StringSession از env var اگر موجود باشد (Railway)
+# Importing bot.py in tests must not open my_session.session (that kicks Railway off Telegram).
 _session_string = os.environ.get('TELETHON_SESSION_STRING', '').strip()
+_live = bool(_session_string) or bool(os.environ.get('RAILWAY_ENVIRONMENT')) or __name__ == '__main__'
 if _session_string:
     from telethon.sessions import StringSession as _StringSession
     _session = _StringSession(_session_string)
     print("✅ Using StringSession from TELETHON_SESSION_STRING env var", flush=True)
-else:
+elif _live:
     _session = session_name
     print("⚠️  No TELETHON_SESSION_STRING — using file session (may break on Railway redeploy)", flush=True)
+else:
+    from telethon.sessions import MemorySession as _MemorySession
+    _session = _MemorySession()
 
 client = TelegramClient(
     _session,
@@ -13887,6 +13850,7 @@ _AI_TRIGGER_COMPILED = re.compile(
     r'جالبه|مطمئنی|جدی|واقعاً|یعنی|باورم نمیشه|'
     r'کمکی|میتونی|میتونم|میشه کمک|ممنون میشم|'
     r'فیلم|سریال|هوا|ترافیک|خواب|باشگاه|فوتبال|ماشین|دانشگاه|'
+    r'سلام|درود|چه خبر|'
     r'vpn|فیلترشکن|اینترنت|وای.?فای|دلار|طلا|غذا|رستوران|'
     r'شمال|مسافرت|سفر|ورزش|آیفون|اندروید|کار از خونه|دورکار',
     re.IGNORECASE
@@ -14630,21 +14594,12 @@ def _mark_funnel_sent(group_id: int, user_id: int):
     _user_conv_tracker[key]["count"] = 0  # reset so funnel doesn't repeat every reply
 
 async def generate_pm_funnel_msg(recent_ctx: str, exchange_count: int = 3, chat_id: int = None) -> str:
-    """Strong contextual low-pressure PM invitation. Full pipeline. Natural human tone."""
-    ctx = (recent_ctx or '')[:280]
-    hint = f"بعد از {exchange_count} تبادل واقعی، یک جمله خیلی طبیعی و گرم بنویس که پیشنهاد کنی جزئیات رو در پی وی ادامه بدیم. زمینه: {ctx}. مثل حرف دوست صمیمی. کوتاه و صمیمی."
+    """Soft PM invite from curated lines — no extra Qwen call."""
     try:
-        resp = await call_qwen3_natural([ctx] if ctx else [], hint, chat_id=chat_id, high_value=True)
-        if resp and is_high_quality_natural(resp) and 18 < len(resp) < 160:
-            return resp
+        from ai.human_style import funnel_lines
+        return random.choice(funnel_lines())
     except Exception:
         pass
-
-    cl = (ctx or "").lower()
-    if any(x in cl for x in ['ارسال', 'استانبول', 'دبی', 'تورنتو']):
-        return random.choice(["جزئیات ارسال به شهرت رو خصوصی بگو ببینم", "برای شهرت بهتره خصوصی حرف بزنیم، پیام بده"])
-    if any(x in cl for x in ['پرداخت', 'usdt', 'trc20']):
-        return random.choice(["یه نکته پرداخت دقیق دارم که اینجا نمیشه گفت، پیام بده", "آدرس و جزئیات پرداخت رو خصوصی بگو چک کنم"])
     return random.choice([
         "اینجا شلوغه، اگه میخوای بیشتر حرف بزنیم خصوصی پیام بده",
         "جزئیاتش بهتره خصوصی حرف بزنیم، پیام بده",
@@ -14695,7 +14650,7 @@ async def _post_conversation_starter(gid: int) -> bool:
     try:
         recent = await fetch_recent_group_context(client, gid, limit=12)
         starter = await group_engager.generate_starter(gid, recent)
-        if not starter or not is_high_quality_natural(starter):
+        if not starter or not (is_high_quality_natural(starter) or len(starter) > 20):
             starter = random.choice(CONVERSATION_STARTERS)
 
         if _is_repetitive_or_similar(gid, starter):
@@ -14793,48 +14748,16 @@ async def group_observer_task():
                         if not candidate_msgs:
                             continue
 
-                        def _msg_score(m):
-                            txt = (m.text or "").lower()
-                            score = 0.0
-                            if '?' in txt or '؟' in txt:
-                                score += 5
-                            if any(kw in txt for kw in ['دارو', 'ریتالین', 'اوزمپیک', 'مودافینیل', 'انسولین', 'ترامادول', 'کونسرتا']):
-                                score += 4
-                            if any(kw in txt for kw in ['فیلم', 'سریال', 'هوا', 'کار', 'خواب', 'vpn', 'دلار',
-                                                         'فوتبال', 'سفر', 'ماشین', 'دانشگاه', 'غذا', 'اینترنت',
-                                                         'باشگاه', 'شمال', 'فیلترشکن']):
-                                score += 3.5
-                            if any(kw in txt for kw in ['کریپتو', 'usdt', 'پرداخت', 'ارسال', 'خرید', 'سفارش']):
-                                score += 3
-                            if any(kw in txt for kw in ['مهاجرت', 'ترکیه', 'دبی', 'کانادا', 'ویزا', 'اقامت']):
-                                score += 2.5
-                            if any(kw in txt for kw in ['سلام', 'درود', 'چه خبر', 'خوبی', 'چطوری']):
-                                score += 2.0
-                            if any(kw in txt for kw in ['کمک', 'راهنما', 'نمیدونم', 'مشکل', 'سوال', 'تجربه', 'نظرت']):
-                                score += 2.5
-                            # personal / story signals (high PM conversion potential)
-                            if any(kw in txt for kw in ['من', 'دوست', 'برام', 'گرفتم', 'استفاده', 'تست']):
-                                score += 1.5
-                            score += min(len(txt) / 55, 3.0)
-                            # recency bonus already filtered
-                            # strategist boost for "very intelligent" target selection (max PM chance)
-                            try:
-                                if USE_AI_CORE and _strategist:
-                                    dec = _strategist(txt)
-                                    score += min(dec.get('score', 0) * 0.35, 2.5)
-                            except:
-                                pass
-                            return score
-
-                        candidate_msgs.sort(key=_msg_score, reverse=True)
-                        viable = [m for m in candidate_msgs if _msg_score(m) >= 1.2]
-                        if not viable:
+                        from ai.human_style import pick_scored_target
+                        target_msg = pick_scored_target(
+                            candidate_msgs,
+                            group_engager._score_target_message,
+                            min_score=1.2,
+                            top_n=5,
+                            randomize=0.45,
+                        )
+                        if not target_msg:
                             continue
-                        pool = viable[:5]
-                        if random.random() < 0.45 and len(pool) > 1:
-                            target_msg = random.choice(pool)
-                        else:
-                            target_msg = pool[0]
 
                         target_text = target_msg.text.strip()
                         target_uid = target_msg.sender_id

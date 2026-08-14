@@ -52,7 +52,7 @@ STARTER_BANK = {
     'greeting': [
         "سلام بچه‌ها، امروز چه خبر؟",
         "سلام. گروه امروز آرومه یا من دیر اومدم؟",
-        "درود، همه خوبینا؟",
+        "درود، همه خوبینا؟ تازه اومدم ببینم چی میگذره.",
     ],
     'vpn': [
         "راستی VPN چی استفاده میکنید این روزا؟",
@@ -66,6 +66,8 @@ STARTER_BANK = {
         "کار از خونه بهتره یا دفتر؟ من که تمرکزم تو خونه بهتره.",
         "خوابتون منظمه این روزا یا مثل من بهم ریخته؟",
         "باشگاه میرید این روزا یا ول کردین؟",
+        "دانشگاه یا کار، این روزا کدومش بیشتر وقتتونو گرفته؟",
+        "قهوه میخورید یا چای که ظهر نخوابید؟",
     ],
     'city': [
         "هوای شهرتون چطوره امروز؟",
@@ -107,7 +109,7 @@ def pick_context_starter(recent_ctx: str = "") -> str:
         keyed.extend(STARTER_BANK['food'])
     if any(w in ctx for w in ['سلام', 'چه خبر']):
         keyed.extend(STARTER_BANK['greeting'])
-    if keyed and random.random() < 0.7:
+    if keyed and random.random() < 0.85:
         return random.choice(keyed)
     # Weighted mix: mostly everyday, rarely domain
     bags = (
@@ -127,3 +129,45 @@ def funnel_lines() -> List[str]:
         "جزئیاتش بهتره خصوصی حرف بزنیم، پیام بده.",
         "اگه ادامه داره پی‌وی بده، اینجا شلوغه.",
     ]
+
+
+def score_group_message(text: str) -> float:
+    """Keyword score for picking a group message to answer. Higher = more reply-worthy."""
+    txt = (text or "").lower()
+    if not txt.strip():
+        return 0.0
+    sc = 0.0
+    if '?' in txt or '؟' in txt:
+        sc += 5
+    if any(k in txt for k in ['دارو', 'ریتالین', 'اوزمپیک', 'مودافینیل', 'انسولین', 'ترامادول', 'کونسرتا']):
+        sc += 4
+    if any(k in txt for k in ['فیلم', 'سریال', 'هوا', 'کار', 'خواب', 'vpn', 'دلار',
+                               'فوتبال', 'سفر', 'ماشین', 'دانشگاه', 'غذا', 'اینترنت',
+                               'باشگاه', 'شمال', 'فیلترشکن', 'قهوه']):
+        sc += 3.5
+    if any(k in txt for k in ['کریپتو', 'usdt', 'پرداخت', 'ارسال', 'خرید', 'سفارش']):
+        sc += 3
+    if any(k in txt for k in ['مهاجرت', 'ترکیه', 'دبی', 'کانادا', 'ویزا', 'اقامت']):
+        sc += 2.5
+    if any(k in txt for k in ['سلام', 'درود', 'چه خبر', 'خوبی', 'چطوری']):
+        sc += 2.0
+    if any(k in txt for k in ['کمک', 'راهنما', 'نمیدونم', 'مشکل', 'سوال', 'تجربه', 'نظرت']):
+        sc += 2.5
+    if any(k in txt for k in ['من', 'دوست', 'برام', 'گرفتم', 'استفاده', 'تست']):
+        sc += 1.5
+    sc += min(len(txt) / 55, 3.0)
+    return sc
+
+
+def pick_scored_target(items, score_fn, min_score: float = 1.2, top_n: int = 5, randomize: float = 0.45):
+    """Pick the top item, or randomly among the top-N viable ones (human-like, not always #1)."""
+    if not items:
+        return None
+    ranked = sorted(items, key=score_fn, reverse=True)
+    viable = [x for x in ranked if score_fn(x) >= min_score]
+    if not viable:
+        return None
+    pool = viable[:top_n]
+    if randomize and random.random() < randomize and len(pool) > 1:
+        return random.choice(pool)
+    return pool[0]

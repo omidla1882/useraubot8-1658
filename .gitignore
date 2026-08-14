@@ -33,8 +33,7 @@ env/
 *.swo
 *~
 
-# Session files (sensitive)
-*.session
+
 
 # Local data files
 *.json

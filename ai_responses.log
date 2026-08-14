@@ -3438,3 +3438,448 @@ FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
 RAW: ''
 FINAL: 'راستش USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه. شبکه رو دقیق چک کن.'
 ---
+
+[2026-08-14T14:52:51] OK intent=greeting llm=no err=rate_limited gid=-1001772970336
+RAW: ''
+FINAL: 'سلام خوبی؟ من تازه اومدم ببینم چی میگذره.'
+---
+
+[2026-08-14T14:52:52] OK intent=unknown llm=no err=rate_limited gid=-1003922189488
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:52:53] FALLBACK intent=unknown gid=-1002182776061
+RAW: ''
+FINAL: 'اوکی فهمیدم. نظرت خودت چیه؟'
+---
+
+[2026-08-14T14:52:53] OK intent=unknown llm=no err=rate_limited gid=-1002182776061
+RAW: ''
+FINAL: 'اوکی فهمیدم. نظرت خودت چیه؟'
+---
+
+[2026-08-14T14:52:54] OK intent=unknown llm=no err=rate_limited gid=-1001525760604
+RAW: ''
+FINAL: 'آره این موضوع آشناست. یه کم بیشتر بگو.'
+---
+
+[2026-08-14T14:52:54] OK intent=trust_question llm=no err=rate_limited gid=-1001461452675
+RAW: ''
+FINAL: 'پرداخت فقط با ارز دیجیتال: BTC، ETH، USDT (TRC20 پیشنهادی - کمترین کارمزد)، TRX، BNB، TON، SOL، DOGE. صرافی\u200cهای خوب: نوبیتکس، والکس، تترلند. تأیید معمولاً ۵-۱۵ '
+---
+
+[2026-08-14T14:52:55] OK intent=unknown llm=no err=rate_limited gid=-1001772970336
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:52:55] FALLBACK intent=unknown gid=-1002308265826
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:52:55] OK intent=unknown llm=no err=rate_limited gid=-1002308265826
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:52:56] FALLBACK intent=unknown gid=-1001051558413
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:52:56] OK intent=unknown llm=no err=rate_limited gid=-1001051558413
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:52:58] OK intent=unknown llm=no err=rate_limited gid=-1002182776061
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:52:58] OK intent=unknown llm=no err=rate_limited gid=-1001417786939
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:52:58] OK intent=crypto_info llm=no err=rate_limited gid=-1001499561844
+RAW: ''
+FINAL: 'به نظرم USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه. TRC20 معمولاً کم\u200cدردسرتره.'
+---
+
+[2026-08-14T14:52:59] OK intent=unknown llm=no err=rate_limited gid=-1003073075235
+RAW: ''
+FINAL: 'آره این موضوع آشناست. یه کم بیشتر بگو.'
+---
+
+[2026-08-14T14:52:59] FALLBACK intent=unknown gid=-1001294205671
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:52:59] OK intent=unknown llm=no err=http:Server disconnected gid=-1001294205671
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:53:03] FALLBACK intent=unknown gid=-1001294205671
+RAW: ''
+FINAL: 'آره این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:03] OK intent=unknown llm=no err=rate_limited gid=-1001294205671
+RAW: ''
+FINAL: 'آره این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:03] OK intent=crypto_info llm=no err=rate_limited gid=-1001499561844
+RAW: ''
+FINAL: 'پرداخت فقط با ارز دیجیتال: BTC، ETH، USDT(TRC20 بهترین)، TRX، BNB، TON، SOL، DOGE. نوبیتکس و والکس خوبه. TRC20 کارمزد پایینی داره.'
+---
+
+[2026-08-14T14:53:04] OK intent=crypto_info llm=no err=rate_limited gid=-1001461452675
+RAW: ''
+FINAL: 'USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه. TRC20 معمولاً کم\u200cدردسرتره.'
+---
+
+[2026-08-14T14:53:04] OK intent=crypto_info llm=no err=rate_limited gid=-1002028712749
+RAW: ''
+FINAL: 'به نظرم USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه. TRC20 معمولاً کم\u200cدردسرتره.'
+---
+
+[2026-08-14T14:53:04] OK intent=crypto_info llm=no err=rate_limited gid=-1001499561844
+RAW: ''
+FINAL: 'USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه.'
+---
+
+[2026-08-14T14:53:04] FALLBACK intent=unknown gid=-1001417786939
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:04] OK intent=unknown llm=no err=rate_limited gid=-1001417786939
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:04] OK intent=shipping_time llm=no err=rate_limited gid=-1001417786939
+RAW: ''
+FINAL: 'به نظرم استانبول ۴-۸ ساعته، تهران زیر ۴ ساعت، دبی و تورنتو هم معمولاً همین\u200cقدر. بسته محرمانه میاد.'
+---
+
+[2026-08-14T14:53:04] FALLBACK intent=complaint gid=-1001827843799
+RAW: ''
+FINAL: 'آره این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:04] OK intent=complaint llm=no err=rate_limited gid=-1001827843799
+RAW: ''
+FINAL: 'آره این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:05] OK intent=unknown llm=no err=rate_limited gid=-1001298051479
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:05] OK intent=unknown llm=no err=rate_limited gid=-1001294205671
+RAW: ''
+FINAL: 'آره این موضوع آشناست. یه کم بیشتر بگو.'
+---
+
+[2026-08-14T14:53:05] OK intent=crypto_info llm=no err=rate_limited gid=-1001499561844
+RAW: ''
+FINAL: 'پرداخت فقط با ارز دیجیتال: BTC، ETH، USDT(TRC20 بهترین)، TRX، BNB، TON، SOL، DOGE. نوبیتکس و والکس خوبه. TRC20 کارمزد پایینی داره.'
+---
+
+[2026-08-14T14:53:05] OK intent=unknown llm=no err=rate_limited gid=-1001525760604
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:53:05] FALLBACK intent=unknown gid=-1001294205671
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:05] OK intent=unknown llm=no err=rate_limited gid=-1001294205671
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:06] OK intent=trust_question llm=no err=rate_limited gid=-1001298051479
+RAW: ''
+FINAL: 'راستش تمام محصولات اورجینال اروپایی/آمریکایی با ضمانت، هولوگرام و کد batch. بسته\u200cبندی محرمانه. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:06] FALLBACK intent=unknown gid=-1001827843799
+RAW: ''
+FINAL: 'آره این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:06] OK intent=unknown llm=no err=rate_limited gid=-1001827843799
+RAW: ''
+FINAL: 'آره این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:06] OK intent=unknown llm=no err=rate_limited gid=-1001525760604
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:07] OK intent=faq_account llm=no err=rate_limited gid=-1002028712749
+RAW: ''
+FINAL: 'آره این موضوع آشناست. یه کم بیشتر بگو.'
+---
+
+[2026-08-14T14:53:09] OK intent=tracking llm=no err=rate_limited gid=-1001461452675
+RAW: ''
+FINAL: 'معمولاً پرداخت فقط با ارز دیجیتال: BTC، ETH، USDT(TRC20 بهترین)، TRX، BNB، TON، SOL، DOGE. نوبیتکس و والکس خوبه. TRC20 کارمزد پایینی داره. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:09] FALLBACK intent=unknown gid=-1002182776061
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:53:09] OK intent=unknown llm=no err=http:Server disconnected gid=-1002182776061
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:53:10] OK intent=stock_check llm=no err=rate_limited gid=-1001319583554
+RAW: ''
+FINAL: 'راستش متیل\u200cفنیدات برای درمان اختلال کمبود توجه و بیش\u200cفعالی (ADHD) و نارکولپسی. موجودیش بستگه به مدل.'
+---
+
+[2026-08-14T14:53:10] FALLBACK intent=unknown gid=-1002182776061
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:10] OK intent=unknown llm=no err=rate_limited gid=-1002182776061
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:10] FALLBACK intent=unknown gid=-1001298051479
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:10] OK intent=unknown llm=no err=rate_limited gid=-1001298051479
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:12] FALLBACK intent=unknown gid=-1002028712749
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:12] OK intent=unknown llm=no err=rate_limited gid=-1002028712749
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:12] OK intent=crypto_info llm=no err=rate_limited gid=-1002028712749
+RAW: ''
+FINAL: 'پرداخت فقط با ارز دیجیتال: BTC، ETH، USDT(TRC20 بهترین)، TRX، BNB، TON، SOL، DOGE. نوبیتکس و والکس خوبه. TRC20 کارمزد پایینی داره.'
+---
+
+[2026-08-14T14:53:12] OK intent=crypto_info llm=no err=rate_limited gid=-1001525760604
+RAW: ''
+FINAL: 'USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه. TRC20 معمولاً کم\u200cدردسرتره.'
+---
+
+[2026-08-14T14:53:14] OK intent=faq_account llm=no err=rate_limited gid=-1001778593556
+RAW: ''
+FINAL: 'آره این موضوع آشناست. یه کم بیشتر بگو.'
+---
+
+[2026-08-14T14:53:15] FALLBACK intent=unknown gid=-1002182776061
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:15] OK intent=unknown llm=no err=rate_limited gid=-1002182776061
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:15] FALLBACK intent=faq_wallet gid=-1002028712749
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:15] OK intent=faq_wallet llm=no err=rate_limited gid=-1002028712749
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:21] OK intent=unknown llm=no err=http:Server disconnected gid=-1001778593556
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:48] FALLBACK intent=unknown gid=-1001778593556
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:48] OK intent=unknown llm=no err=rate_limited gid=-1001778593556
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:48] OK intent=bot_question llm=no err=skipped gid=-1001499561844
+RAW: ''
+FINAL: 'آره اینجام. بگو ببینم چی میخوای.'
+---
+
+[2026-08-14T14:53:48] OK intent=crypto_info llm=no err=rate_limited gid=-1001525760604
+RAW: ''
+FINAL: 'USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه.'
+---
+
+[2026-08-14T14:53:48] OK intent=crypto_info llm=no err=rate_limited gid=-1001499561844
+RAW: ''
+FINAL: 'USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه.'
+---
+
+[2026-08-14T14:53:48] OK intent=human_request llm=no err=rate_limited gid=-1001281918475
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:53:49] OK intent=crypto_info llm=no err=rate_limited gid=-1002028712749
+RAW: ''
+FINAL: 'USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه. TRC20 معمولاً کم\u200cدردسرتره.'
+---
+
+[2026-08-14T14:53:49] OK intent=unknown llm=no err=rate_limited gid=-1001919512266
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:49] OK intent=unknown llm=no err=rate_limited gid=-1002182776061
+RAW: ''
+FINAL: 'آره این موضوع آشناست. یه کم بیشتر بگو.'
+---
+
+[2026-08-14T14:53:49] FALLBACK intent=unknown gid=-1001281918475
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:49] OK intent=unknown llm=no err=rate_limited gid=-1001281918475
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:49] OK intent=bot_question llm=no err=skipped gid=-1001461452675
+RAW: ''
+FINAL: 'آره اینجام. بگو ببینم چی شده.'
+---
+
+[2026-08-14T14:53:49] FALLBACK intent=unknown gid=-1003922189488
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:49] OK intent=unknown llm=no err=rate_limited gid=-1003922189488
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:49] FALLBACK intent=unknown gid=-1002182776061
+RAW: ''
+FINAL: 'آره این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:49] OK intent=unknown llm=no err=rate_limited gid=-1002182776061
+RAW: ''
+FINAL: 'آره این موضوع رو میشناسم. خودم چند بار برخورد داشتم. بیشتر بگو.'
+---
+
+[2026-08-14T14:53:49] OK intent=bot_question llm=no err=skipped gid=-1001778593556
+RAW: ''
+FINAL: 'آره اینجام. بگو ببینم چی شده.'
+---
+
+[2026-08-14T14:53:49] OK intent=unknown llm=no err=rate_limited gid=-1003073075235
+RAW: ''
+FINAL: 'راستش بستگه به شرایط. تو خودت چی فکر میکنی؟'
+---
+
+[2026-08-14T14:53:49] FALLBACK intent=faq_account gid=-1001499561844
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:49] OK intent=faq_account llm=no err=rate_limited gid=-1001499561844
+RAW: ''
+FINAL: 'منم یه کم درگیر این موضوع بودم. جزئیاتش چیه؟'
+---
+
+[2026-08-14T14:53:49] OK intent=product_search llm=no err=rate_limited gid=-1001281918475
+RAW: ''
+FINAL: 'به نظرم مودافینیل برای تمرکز و بیداری. مودالرت هم همون ماده\u200cست. خودم استفاده کردم خوبه.'
+---
+
+[2026-08-14T14:53:49] OK intent=crypto_info llm=no err=rate_limited gid=-1002028712749
+RAW: ''
+FINAL: 'پرداخت فقط با ارز دیجیتال: BTC، ETH، USDT(TRC20 بهترین)، TRX، BNB، TON، SOL، DOGE. نوبیتکس و والکس خوبه. TRC20 کارمزد پایینی داره.'
+---
+
+[2026-08-14T14:53:49] OK intent=trust_question llm=no err=rate_limited gid=-1001461452675
+RAW: ''
+FINAL: 'پرداخت فقط با ارز دیجیتال: BTC، ETH، USDT(TRC20 بهترین)، TRX، BNB، TON، SOL، DOGE. نوبیتکس و والکس خوبه. TRC20 کارمزد پایینی داره.'
+---
+
+[2026-08-14T14:53:49] OK intent=unknown llm=no err=rate_limited gid=-1002631728811
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:49] FALLBACK intent=unknown gid=-1001827843799
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:49] OK intent=unknown llm=no err=rate_limited gid=-1001827843799
+RAW: ''
+FINAL: 'جالبه. بیشتر بگو ببینم از کجا شروع شده.'
+---
+
+[2026-08-14T14:53:49] OK intent=crypto_info llm=no err=rate_limited gid=-1002028712749
+RAW: ''
+FINAL: 'پرداخت فقط با ارز دیجیتال: BTC، ETH، USDT(TRC20 بهترین)، TRX، BNB، TON، SOL، DOGE. نوبیتکس و والکس خوبه. TRC20 کارمزد پایینی داره.'
+---
+
+[2026-08-14T14:53:49] OK intent=crypto_info llm=no err=rate_limited gid=-1001461452675
+RAW: ''
+FINAL: 'راستش USDT روی TRC20 کارمزد خیلی پایینه و سریع تأیید میشه. همیشه شبکه رو دقیق چک کن. BNB هم خوبه.'
+---
+
+[2026-08-14T14:53:49] OK intent=bot_question llm=no err=skipped gid=-1002028712749
+RAW: ''
+FINAL: 'حرف بزن ببینم. معمولاً بستگه داره به چیزی که میخوای.'
+---
+
+[2026-08-14T14:53:50] FALLBACK intent=tracking gid=-1001461452675
+RAW: ''
+FINAL: 'وارد سایت شو، بخش سفارش\u200cها پیگیری داری'
+---
+
+[2026-08-14T14:53:50] OK intent=tracking llm=no err=rate_limited gid=-1001461452675
+RAW: ''
+FINAL: 'وارد سایت شو، بخش سفارش\u200cها پیگیری داری'
+---
+
+[2026-08-14T14:53:50] OK intent=greeting llm=no err=rate_limited gid=-1001476272723
+RAW: ''
+FINAL: 'سلام خوبی؟ من تازه اومدم ببینم چی میگذره.'
+---

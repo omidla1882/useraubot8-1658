@@ -39,6 +39,10 @@ env/
 *.json
 !requirements.txt
 
+# Telegram Session Files (use StringSession in Railway)
+*.session
+*.session-journal
+
 # Logs
 *.log
 

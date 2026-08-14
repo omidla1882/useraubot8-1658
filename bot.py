@@ -209,7 +209,7 @@ RATE_ADJUSTMENT_INTERVAL = 1800  # هر 30 دقیقه بررسی و تنظیم
 # برای غیرفعال کردن ارسال تبلیغات: False
 # برای فعال کردن ارسال تبلیغات: True
 # ═══════════════════════════════════════════════════════════
-ENABLE_BROADCAST = False  # 🟢 ارسال پیام‌های تبلیغاتی فعال شد
+ENABLE_BROADCAST = True  # 🟢 ارسال پیام‌های تبلیغاتی فعال شد
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 🧠 PROFESSIONAL NATURAL AI + HUMAN SIM (ported + adapted from web3test best practices)
@@ -768,12 +768,12 @@ def record_group_bot_send(gid: int):
 # 📨 ارسال پیام خصوصی (PM) به کاربران
 # True = فعال | False = غیرفعال
 # ⚠️ ریسک: بالا - ممکن است منجر به PeerFlood یا UserBanned شود
-ENABLE_PM_SENDING = True  # 🟢 غیرفعال برای جلوگیری از بن
+ENABLE_PM_SENDING = False  # 🟢 غیرفعال برای جلوگیری از بن
 
 # ➕ اضافه کردن مستقیم اعضا به گروه (Direct Add/Invite)
 # True = فعال | True = غیرفعال  
 # ⚠️ ریسک: خیلی بالا - ممکن است منجر به FloodWait طولانی یا بن شود
-ENABLE_DIRECT_ADD = True  # 🔴 غیرفعال - بسیار خطرناک برای حساب کاربر
+ENABLE_DIRECT_ADD = False  # 🔴 غیرفعال - بسیار خطرناک برای حساب کاربر
 
 # 🔍 جستجو و عضویت در گروه‌های جدید
 # True = فعال | False = غیرفعال
